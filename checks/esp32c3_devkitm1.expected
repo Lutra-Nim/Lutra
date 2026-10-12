@@ -1,0 +1,11 @@
+BEGIN selfcheck
+clock ok
+delay ok
+millis ok
+gpio output ok
+gpio pull-up ok
+gpio pull-down ok
+interrupts ok
+constants ok
+idle ok
+Guru Meditation Error: Core 0 panic'ed (Illegal instruction)

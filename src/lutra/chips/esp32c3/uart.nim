@@ -1,0 +1,74 @@
+import std/[macros, macrocache]
+import ../../[claims, containers]
+import registers, peripherals, interrupts
+
+template fifo(uart: Uart): Reg = Reg(uart.base + uartFifo)
+template interruptEnable(uart: Uart): Reg = Reg(uart.base + uartInterruptEnable)
+template interruptClear(uart: Uart): Reg = Reg(uart.base + uartInterruptClear)
+template clockDivider(uart: Uart): Reg = Reg(uart.base + uartClockDivider)
+template status(uart: Uart): Reg = Reg(uart.base + uartStatus)
+template config1(uart: Uart): Reg = Reg(uart.base + uartConfig1)
+
+template waiting(uart: Uart): uint32 = uart.status[] and 0x3ff # In the receive FIFO
+
+proc setBaud*(uart: static Uart, baud: uint32) =
+  # The boot ROM clocks the port from the 40 MHz crystal, so the core's clock
+  # does not come into it. The divider has four fractional bits.
+  let divider = 40_000_000'u32 * 16 div baud
+  uart.clockDivider[] = (divider shr 4) or ((divider and 0xf) shl 20)
+
+proc send*(uart: static Uart, c: char) =
+  claim("IO" & $uart.tx.num, "UART" & $uart.num & " TX")
+  while (uart.status[] shr 16 and 0x3ff) >= 126: discard # Transmit FIFO is full
+  uart.fifo[] = c.uint32
+
+# Receiving is polled, straight from the 128-byte FIFO in the hardware, unless
+# the program asks for a buffer. Which of the two a port uses is settled at
+# compile time, here: its buffer's size, or 0 once it has been read polled.
+const buffers = CacheTable"lutra.uartBuffers"
+
+macro bufferSize(uart: static Uart): int =
+  let port = "UART" & $uart.num
+  if port notin buffers: buffers[port] = newLit(0)
+  buffers[port]
+
+macro setBufferSize(uart: static Uart, size: static int) =
+  let port = "UART" & $uart.num
+  if port in buffers:
+    error "uart" & $uart.num & ".buffer has to come before the port is first read, and only once"
+  buffers[port] = newLit(size)
+
+proc ring(uart: static Uart, size: static int): ptr Ring[size, char] =
+  var buffer {.global.}: Ring[size, char]
+  addr buffer
+
+proc poll*(uart: static Uart): bool =
+  const size = bufferSize(uart)
+  when size > 0: uart.ring(size)[].len > 0
+  else: uart.waiting > 0
+
+proc receive*(uart: static Uart): char =
+  const size = bufferSize(uart)
+  while not uart.poll: discard
+  when size > 0: uart.ring(size)[].pop
+  else: char(uart.fifo[] and 0xff)
+
+const
+  fifoFull = 1'u32 shl 0
+  fifoTimeout = 1'u32 shl 8 # The line went quiet with bytes still in the FIFO
+  timeoutEnable = 1'u32 shl 21
+
+template buffer*(uart: static Uart, size: static int) =
+  ## From here on, receives through an interrupt into a buffer of `size`
+  ## bytes, so the program may look away for longer than the hardware's FIFO
+  ## lasts. Bytes that arrive with the buffer full are dropped.
+  setBufferSize(uart, size)
+
+  proc handler() {.exportc: "lutra_interrupt_" & $uartSources[uart.num].line, cdecl.} =
+    uart.interruptClear[] = fifoFull or fifoTimeout
+    while uart.waiting > 0:
+      discard uart.ring(size)[].push(char(uart.fifo[] and 0xff))
+
+  uart.config1[] = uart.config1[] and not 0x1ff'u32 or 64 or timeoutEnable # Interrupt at 64 bytes
+  uart.interruptEnable[] = fifoFull or fifoTimeout
+  enable(uartSources[uart.num])

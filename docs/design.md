@@ -128,19 +128,30 @@ Separate packages, one per library, for everything in §8.2 to §8.4. Suggested 
 
 ### 4.3 Build tooling
 
-**Proposed.** Plain `nim` and Nimble tasks, pulled in by one line in `config.nims`. No interpreter dependency.
+**Decided.** Plain `nim` tasks written in NimScript, pulled in by two lines in `config.nims`. No interpreter dependency, and no program to install.
 
-Commands every board provides:
+```nim
+import lutra/project
+board "esp32c3_devkitm1"
+```
+
+Commands every board provides, run as `nim <command> [program.nim]`:
 
 | Command | Does |
 |---|---|
-| `build` | Compile and link |
-| `flash` | Package the image and program the board |
+| `build` | Compile and link. Plain `nim c` does the same |
+| `flash` | Build, package the image and program the board |
 | `monitor` | Read the console, with a reset option |
-| `size` | Per-section sizes against the board's budgets |
-| `check` | Build, flash and run the board's self-check, and compare the output |
+| `size` | Build, and show per-region sizes against the board's budgets |
+| `selfcheck` | Build, flash and run the board's self-check, and compare the output |
 
-`flash` and `monitor` should accept a board identity (serial port or MAC address) and an "all attached boards" mode. Krill flashes up to 16 boards at a time.
+The self-check command is not called `check` because `nim check` already exists.
+
+Nim rejects flags it does not know, so options are defines placed before the command, for example `nim -d:port=/dev/ttyUSB1 flash hello.nim`. The serial port can also be named in `LUTRA_PORT`, and is found without help when only one is attached.
+
+Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time.
+
+The tasks use `sh`, `stty` and `awk`, so they run on Linux only for now.
 
 ---
 
@@ -178,61 +189,87 @@ The description must be able to express:
 - A constants region sized by the user. Krill wants about 3 MB of a 4 MB flash for weights.
 - Reserved regions, so that space for a future second firmware image (§8.5) can be set aside now.
 
-How the script is generated, at compile time or by the build task, is open (§12).
+**Verified** for the ESP32-C3. A board declares `Memory(flashSize: 4.MB)`. The chip turns that value into the linker script when `config.nims` is evaluated, and into the offsets `flash` writes at, so `nim c` alone is a complete build. The script's file name contains a hash of its text, because Nim does not link again when only a linker script's contents change.
+
+The description has fields for the code region's size and for a reserved region at the end of flash. There is no user-facing way to set them yet.
 
 ### 5.3 Startup and code that runs before flash is readable
 
 On the ESP32-C3 the core cannot read flash until a page table is written, so startup code is loaded into RAM by the boot ROM and must not touch anything in flash. Other chips have similar early-boot constraints.
 
-**Proposed:**
-
-- A pragma, for example `{.ram.}`, that places a procedure in RAM.
-- A build check that fails if RAM code references a flash address. In the port this was checked by reading the disassembly by hand.
+- **Verified:** a build check that fails if RAM code references a flash address. The link keeps its relocations (`--emit-relocs`), and `build` reads the ones in the RAM code section. On the C3 the startup is in two parts for this: `lutraReset` in RAM, which ends by calling `lutraMain` in flash, the one reference the check allows.
+- **Proposed:** a pragma, for example `{.ram.}`, that places a procedure in RAM.
 
 The startup sequence itself is in Appendix A.
 
 ### 5.4 Compile-time ownership of pins and peripherals
 
-**Proposed.** Every use of a pin or peripheral claims it at compile time. A second claim is a compile error that names both claimants, for example "IO21 is claimed by UART0 TX and by `statusLed`".
+**Decided:** claims are implicit and by role. Whatever configures a pin or peripheral claims it for a role, and a second claim for a different role is a compile error naming both:
 
-Requirements:
+```
+IO21 is claimed as UART0 TX and as a GPIO at blink.nim(8)
+```
 
-- Buses are shareable. Several devices may sit on one I2C bus. Several SPI devices may share clock and data pins, each owning its own chip-select.
-- A claim records what a pin is used for, so the same information can print a wiring table for the user.
+- `output()` and `input()` claim a pin as a GPIO. A UART claims its TX pin when it is first sent to. A peripheral that takes pins claims each for its own role.
+- Claiming again for the same role is allowed, so a pin can be reconfigured and a bus can be shared. Several devices may sit on one I2C bus. Several SPI devices may share clock and data pins, each claiming its own chip-select.
+- There is no new syntax. The cost is that two pieces of code using one pin as a plain GPIO are not caught.
 
-Suggested mechanism: a macro that records claims in a compile-time table. Whether Nim's compile-time state behaves well across modules for this needs an early experiment (§12).
+**Verified** mechanism: a macro, `claim(resource, role, where)` in `lutra/claims`, records claims in a `std/macrocache` table. It works across modules and inside procedures with `static` parameters.
+
+Not built: naming pins in an optional declaration block, and printing a wiring table from the claims.
 
 ### 5.5 Interrupts, trap entry and tasking
 
-**Proposed.** Interrupts are off unless a program asks for them. Handlers are bound at compile time.
+**Decided.** Interrupts are off unless a program asks for them. Handlers are bound at compile time, and a program writes one as a block:
+
+```nim
+bootButton.onFalling:
+  led.toggle()
+```
+
+The block becomes an ordinary procedure, and the interrupt is switched on at that point in the program. A second handler for the same source is a compile error. A variable a handler shares with the rest of the program has to be declared `{.volatile.}`.
+
+**Verified** on the C3:
+
+- Binding is done by the linker. The chip's table of handlers refers to weak symbols, one per interrupt line and one per pin, and a handler is whatever defines the symbol. There is no table in RAM and nothing is registered at runtime.
+- A program that uses no interrupts links none of this and keeps the vendor's trap vector.
+- One level, no nesting: a handler runs to completion with interrupts off.
+- `critical:` runs a block with interrupts off and leaves them as they were.
+- A driver may own its interrupt. `uart0.buffer(4096)` receives through an interrupt into a ring buffer; without it, receiving is polled from the hardware FIFO and no interrupt exists. Which of the two a port uses is fixed at compile time.
 
 The trap entry is the one part that is expensive to change later, so it is designed for tasking from the start:
 
-1. **Trap entry saves the full register context on the current stack and can return onto a different stack.** This allows preemptive task switching to be added without rewriting the interrupt path.
+1. **Trap entry saves the full register context on the current stack and can return onto a different stack.** This allows preemptive task switching to be added without rewriting the interrupt path. **Verified** as far as it goes: the entry passes the stack pointer to the chip's `lutraInterrupt` and resumes from the one it returns, which today is always the same.
 2. **The architecture layer exposes a small context primitive:** prepare a stack, switch to it. This is per architecture, not per chip: one RV32 implementation serves every RISC-V chip. The tasking library (§8.1) is pure Nim on top of it.
 3. **Every blocking wait in every driver goes through one hook.** By default the hook spins. A scheduler replaces it with a yield, and no driver changes.
 
 Chip-specific facts that affect this on the ESP32-C3 are in Appendix A.3.
 
-Default trap behaviour: leave the vendor's handler in place where it is useful. **Verified:** on the C3 the boot ROM's handler prints a full register dump on a fault.
+Default trap behaviour: leave the vendor's handler in place where it is useful. **Verified:** on the C3 the boot ROM's handler prints a full register dump on a fault. It then halts. It does not reset the chip.
+
+**Decided:** once Lutra owns the vector, faults are still handed to the vendor's handler. **Verified:** Lutra's vector puts the vendor's `mtvec` back and returns to the faulting instruction with interrupts off, so it faults again into the boot ROM with every register as it was. No ROM address is hard-coded; the old `mtvec` is read when the vector is installed.
+
+Not done: the trap vector and entry are in flash, so an interrupt can wait on a cache miss. Moving them to RAM needs the check in §5.3 to tell startup code from other RAM code.
 
 ### 5.6 Memory model
 
 **Decided:** no allocator unless requested.
 
-**Verified** complication: with `--mm:arc`, Nim's runtime keeps `malloc`, `free` and `exit` reachable even for a program that never allocates, about 1.4 KB. Steady builds with `--mm:none --panics:on` and links no allocator. Lutra's default configuration should do the same, with the heap as an explicit opt-in.
+**Verified** complication: with `--mm:arc`, Nim's runtime keeps `malloc`, `free` and `exit` reachable even for a program that never allocates, about 1.4 KB. Steady builds with `--mm:none --panics:on` and links no allocator. Lutra's default configuration does the same, and also builds with `-d:danger`. **Verified:** no allocator symbols are linked into the hello-world or the Steady benchmark. The heap opt-in is not built yet. Neither is a panic handler, which is what building without `-d:danger` is waiting on.
 
 Consequence: the core needs allocation-free formatting and fixed-size containers (§8.1), because `string` and `seq` are not available by default.
 
 ### 5.7 Build checks
 
-Each of these was done by hand during the port and should be automatic:
+Each of these was done by hand during the port. `build`, and so `flash`, `size` and `selfcheck`, now does them. Plain `nim c` does not.
 
-- RAM code does not reference flash.
-- Constant data is in flash, not RAM.
-- No allocator symbols are linked unless the heap was requested.
-- No orphan sections appear in the link.
-- Image regions do not overlap.
+| Check | How |
+|---|---|
+| RAM code does not reference flash | **Verified.** Read from the relocations (§5.3) |
+| No orphan sections appear in the link | **Verified.** Any section with an address that the linker script does not name stops the build |
+| Constant data is in flash, not RAM | Follows from the two above: the linker script sends every read-only section to flash, and nothing can be placed outside the script. A table declared `let` or `var` is not constant data and still goes to RAM |
+| No allocator symbols are linked unless the heap was requested | **Verified**, by the linker. Without the heap opt-in, a program that allocates fails to link, with an undefined reference to `end`. The message is unfriendly |
+| Image regions do not overlap | The linker enforces each region's length, and `flash` stops if the RAM-loaded image is larger than its 64K page |
 
 ### 5.8 Hardware self-check
 
@@ -248,11 +285,26 @@ Every board ships a self-check program and the expected output. `check` runs it.
 
 A port is accepted when its self-check passes and Steady's benchmark gives the reference checksum (§10).
 
+**Verified** on the DevKitM-1: everything in the list except heap allocation, plus the GPIO pull-down. The idle run is 30 seconds. The check runs once and ends in the fault, so the `selfcheck` command resets the board and reads from the first byte.
+
 ---
 
 ## 6. The driver contract
 
 Libraries are written against these interfaces and nothing else. This contract is the most important thing to get right, because changing it later breaks every driver.
+
+**Decided:** each interface is a Nim concept in `src/lutra/hal/`, and a library takes one as a `static` parameter:
+
+```nim
+type ByteLink* = concept
+  proc send(link: Self, c: char)
+
+proc put*(link: static ByteLink, c: char) = link.send(c)
+```
+
+**Verified:** peripherals stay compile-time constants, the code is the same as without the concept, and a wrong argument is reported at the caller's line and names the interface. Concepts match the chip's templates and procedures that take `static` parameters. Pin and ByteLink (send only) exist so far; an interface is added when a chip implements it.
+
+The chip's own types need different names from the interfaces, so the C3's pin type is `Gpio`.
 
 **Proposed** set. Operation names are indicative.
 
@@ -276,8 +328,6 @@ Rules:
 - **DMA is not an interface.** It is how a chip's SPI, UART or I2S implementation chooses to move a buffer.
 - **Prove the contract on two architectures before inviting third-party libraries.**
 
-How the interfaces are expressed in Nim, for example as concepts or as duck-typed `static` parameters, is open (§12).
-
 ---
 
 ## 7. HAL features
@@ -290,7 +340,7 @@ How the interfaces are expressed in Nim, for example as concepts or as duck-type
 | TinyML inputs | I2S; hardware RNG; raw flash storage | Microphones, sampling, weights and recorded data |
 | Later | USB device; I2C target; low-power modes; SPI cameras | Useful, not blocking |
 
-State of the seed code against this table: startup, clock, flash mapping, GPIO, UART0 transmit, time, delays and the cycle counter exist and are verified. Everything else is to be written.
+State of Lutra against this table: startup, clock, flash mapping, GPIO, UART0 transmit, time, delays, the cycle counter and allocation-free printing exist and are verified. Everything else is to be written.
 
 ---
 
@@ -385,6 +435,8 @@ Steady stays independent of Lutra. Steady defines a minimal board contract and L
 
 **Verified** on the seed code: Steady's `kws` benchmark, with its ten `board_*` entry points implemented in Nim on top of the Ratel port, gives output checksum `ab2fdbf1`, identical to the C build. Whole-model cycles were 44.40M against 45.15M for the C build. The C figure came from an older build of Steady, so part of that difference may be changes in Steady itself. Weights were in flash at `0x3C10xxxx` and no allocator symbols were linked. The adapter was about 20 lines.
 
+**Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. The other five models have not been run.
+
 Acceptance test for every board port: all six of Steady's reference models give the reference checksums, with cycle counts comparable to the C path.
 
 ---
@@ -395,13 +447,17 @@ Each milestone ends with an exit criterion.
 
 ### M0: Skeleton and seed
 
-- Repository, layout and build tasks (`build`, `flash`, `monitor`, `size`, `check`).
+Done, October 2026.
+
+- Repository, layout and build tasks (`build`, `flash`, `monitor`, `size`, `selfcheck`).
 - Move the C3 seed code into the architecture, chip and board layers.
 - Memory description generating the linker script and flash offsets.
 - The self-check program.
 - **Exit:** the self-check passes on the DevKitM-1, and Steady's `kws` benchmark gives `ab2fdbf1` on Lutra.
 
 ### M1: Core contract
+
+Done, October 2026, as far as the exit criterion. Of the three libraries, only what something needed exists: printing without log levels, a ring buffer, and durations with `delay`. Deadlines, timeouts, a queue and a bounded string are still to write.
 
 - Trap entry designed per §5.5; interrupts; critical sections.
 - UART receive with a ring buffer; GPIO interrupts.
@@ -454,12 +510,8 @@ Three use models Steady already runs on the C3.
 
 **Open design questions, each worth a small experiment early:**
 
-- How to express the interfaces in Nim: concepts, or duck-typed `static` parameters as Ratel does. The second is verified to be zero cost; the first gives better error messages.
-- Whether compile-time ownership can be built on a compile-time table mutated by macros across modules.
-- How the linker script is generated: written at compile time, or by a build task.
 - Which SVD generator to use, and whether generated register files are checked in.
 - How the heap opt-in is expressed.
-- How interrupt handlers are bound at compile time.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
 
 **Risks:**
@@ -518,18 +570,21 @@ In order. Everything up to the cache being enabled runs from RAM and may not cal
 
 ### A.3 Facts that matter for interrupts
 
-These come from Steady's port notes and were not re-tested in the Ratel port.
+The first two come from Steady's port notes. The rest were exercised on hardware by Lutra's self-check and echo test.
 
 - The core does not implement the standard `mie` or `mcycle` registers. Accessing them traps. Interrupts are routed through an external controller.
-- The core ignores the low 8 bits written to `mtvec` and forces vectored mode. A trap vector must be aligned to 256 bytes.
+- The core ignores the low 8 bits written to `mtvec` and forces vectored mode. A trap vector must be aligned to 256 bytes. Faults enter at the base, and interrupt line *n* at base + 4*n*. `mcause` has bit 31 set for an interrupt and the line number in its low bits.
+- The controller is at `0x600C_2000`. A source is routed by writing a line number, 1 to 31, to `base + 4 × source`. Lines are enabled by bit in `+0x104`, given a priority at `+0x114 + 4 × line`, and fire when the priority is at least the threshold in `+0x194`. Lutra uses priority 1 and threshold 1, and clears the enable register first in case the boot ROM left lines of its own enabled; whether it does was not checked.
+- Source numbers used so far: GPIO 16, UART0 21. UART1 is expected to be 22.
+- GPIO: per pin at `0x6000_4074 + 4n`, bits 9:7 select the edge (1 rising, 2 falling, 3 either) and bit 13 enables the interrupt. Pending pins are read at `0x6000_4044` and cleared by writing ones to `0x6000_404C`. An output pin's own edges raise the interrupt, which is how the self-check tests it with nothing wired. Edges closer together than the handler takes are merged.
 
 ### A.4 Peripherals used
 
 | Peripheral | Facts |
 |---|---|
-| UART0 | Base `0x6000_0000`. FIFO at `+0x00`, clock divider at `+0x14`, status at `+0x1C`. Transmit FIFO count is status bits 25:16; wait while it is 126 or more. The boot ROM leaves it at 115200 baud, clocked from the 40 MHz crystal, so it is unaffected by the core clock change. Divider = integer part in the low bits, 4-bit fraction at bit 20. 115200 and 921600 baud verified |
+| UART0 | Base `0x6000_0000`. FIFO at `+0x00`, clock divider at `+0x14`, status at `+0x1C`. Transmit FIFO count is status bits 25:16; wait while it is 126 or more. Receive FIFO count is status bits 9:0, and reading `+0x00` takes a byte; the boot ROM leaves receive working on IO20. Interrupt enable at `+0x0C` and clear at `+0x10`: bit 0 is "receive FIFO reached its threshold" and bit 8 is "the line went quiet with bytes waiting". The threshold is bits 8:0 of `+0x24`, and bit 21 there enables the quiet-line timeout. 64 KB echoed at 921600 baud with no loss, polled and through the interrupt. The boot ROM leaves it at 115200 baud, clocked from the 40 MHz crystal, so it is unaffected by the core clock change. Divider = integer part in the low bits, 4-bit fraction at bit 20. 115200 and 921600 baud verified |
 | GPIO | Output `0x6000_4004`, set `+0x08`, clear `+0x0C`; enable `0x6000_4020`, set `+0x24`, clear `+0x28`; input `0x6000_403C`. Per-pin output source select at `0x6000_4554 + 4n`; `0x80` means "driven by the output register" |
-| IO MUX | Per pin at `0x6000_9004 + 4n`. Bit 8 pull-up, bit 9 input enable, bits 14:12 function; function 1 is GPIO on every pin |
+| IO MUX | Per pin at `0x6000_9004 + 4n`. Bit 7 pull-down, bit 8 pull-up, bit 9 input enable, bits 14:12 function; function 1 is GPIO on every pin. With input enable set, an output pin's level can be read back |
 | System timer | Counts at 16 MHz regardless of core clock. Write bit 30 of `0x6002_3004` to latch, wait for bit 29, read high word at `0x6002_3040` and low word at `0x6002_3044`. Works without further setup |
 
 Not verified: UART1 (expected base `0x6001_0000`), the reset-default function of each pin, and anything about SPI, I2C, DMA, RNG or the interrupt controller. Take these from the ESP32-C3 Technical Reference Manual.
@@ -556,10 +611,14 @@ esptool --chip esp32c3 --port /dev/ttyUSB0 --baud 460800 write-flash \
 
 ### A.6 Measured sizes
 
+From the seed code:
+
 | Program | RAM code | Flash code | Constants |
 |---|---|---|---|
 | Hello world over serial | 248 B | 1.4 KB | 22 B |
 | Steady `kws` benchmark | 248 B | 9.7 KB | 30.5 KB |
+
+On Lutra, hello world is 254 B, 2.2 KB and 288 B. It prints a 64-bit millisecond count, and 64-bit division brings in about 1.7 KB of code and a 256 B table from the compiler's support library.
 
 ---
 
@@ -591,7 +650,11 @@ proc start() {.exportc: "_start",
 - **`std/os` does not compile under `--os:any`.** Compute paths with string operations. `currentSourcePath` works inside an `include`d file.
 - **With `--mm:arc` the runtime always links `malloc`, `free` and `exit`.**
 - **Nimble installs only the extensions listed in `installExt`.** A linker script next to the sources needs its extension added.
-- **`p"text\n"` is a raw string literal.** The `\n` is not an escape. This is Ratel's `progmem` syntax and is one reason not to carry it over.
+- **`p"text\n"` is a raw string literal.** The `\n` is not an escape. This is Ratel's `progmem` syntax and is one reason not to carry it over. `cstring"text\n"` is raw for the same reason; write `cstring("text\n")`.
+- **Setting `--os:any` in `config.nims` is too late to stop the host's libraries being linked.** Nim's own `nim.cfg` has already added `-ldl` for a Unix host. Clear it with `switch("gcc.options.linker", "")`.
+- **Nim does not link again when only a linker script's contents change.** It compares the link command, not the files it names.
+- **A generic procedure binds a name early if `system` already has one symbol by that name.** `link.send(c)` resolved to the channel `send` on the host, and `reset(port)` to `system.reset`. Declare such names with `mixin`.
+- **A template parameter is substituted into field accesses.** With a parameter called `name`, `file.name` in the body becomes `file."the argument"`.
 
 ---
 
@@ -610,7 +673,8 @@ stty -F /dev/ttyUSB0 115200 raw -echo -hupcl
 timeout 5 cat /dev/ttyUSB0
 ```
 
-- Do not read the console while `esptool` is using the port; the capture goes silent after the reset. Flash first, then read, and make test programs repeat their output.
+- `esptool` leaves the port set to return from a read at once when no byte is waiting, which `cat` takes as the end of the file. That is why a capture started before `esptool` runs goes silent after the reset. Lutra's `monitor` and `selfcheck` open the port once, hold it open across the reset and set the mode again afterwards, so they read from the boot ROM's first byte.
+- Lutra's tasks find the compiler under `~/.espressif` without help. `esptool` has to be on `PATH` or named in `ESPTOOL`.
 - Steady's reference results for the C board path are in `~/Documents/GitHub/Steady/build/mcu/esp32c3/<model>/serial.txt`.
 
 ---
