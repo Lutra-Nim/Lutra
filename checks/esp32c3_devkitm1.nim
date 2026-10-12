@@ -87,6 +87,10 @@ block:
     if edges != i: kept = false
   check "interrupts", kept
 
+block:
+  let (a, b, c) = (random(), random(), random())
+  check "random", a != b and b != c and a != c
+
 const expected = checksum(table)
 check "constants", checksum(table) == expected
 

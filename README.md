@@ -3,7 +3,7 @@
 
 Lutra is a hardware abstraction layer and library ecosystem in pure Nim, RISC-V first. It is a spiritual successor to [Ratel](https://github.com/PMunch/ratel) and the board layer underneath [Steady](https://github.com/garrettkinman/Steady).
 
-The plan is in [docs/design.md](docs/design.md). So far there is one board, the ESP32-C3-DevKitM-1, with startup, GPIO and pin interrupts, UART in both directions, time, a cycle counter and compile-time pin ownership: enough to run its hardware self-check and Steady's benchmark.
+The plan is in [docs/design.md](docs/design.md). So far there is one board, the ESP32-C3-DevKitM-1, with startup, GPIO and pin interrupts, both UARTs, SPI as controller and target, framed packets between boards, a random number source, time, a cycle counter and compile-time pin ownership: enough to run its hardware self-check and Steady's benchmark.
 
 ## A first program
 

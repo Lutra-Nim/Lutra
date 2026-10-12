@@ -5,8 +5,8 @@
 
 import std/macros
 import lutra/[fmt, time]
-import lutra/hal/[pin, bytelink]
-export fmt, time, pin, bytelink
+import lutra/hal/[pin, bytelink, spi]
+export fmt, time, pin, bytelink, spi
 
 const lutraBoard {.strdefine.} = ""
 

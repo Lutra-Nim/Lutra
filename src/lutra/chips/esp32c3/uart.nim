@@ -1,6 +1,6 @@
 import std/[macros, macrocache]
 import ../../[claims, containers]
-import registers, peripherals, interrupts
+import registers, peripherals, interrupts, gpio
 
 template fifo(uart: Uart): Reg = Reg(uart.base + uartFifo)
 template interruptEnable(uart: Uart): Reg = Reg(uart.base + uartInterruptEnable)
@@ -8,17 +8,30 @@ template interruptClear(uart: Uart): Reg = Reg(uart.base + uartInterruptClear)
 template clockDivider(uart: Uart): Reg = Reg(uart.base + uartClockDivider)
 template status(uart: Uart): Reg = Reg(uart.base + uartStatus)
 template config1(uart: Uart): Reg = Reg(uart.base + uartConfig1)
+template clockConfig(uart: Uart): Reg = Reg(uart.base + uartClockConfig)
 
 template waiting(uart: Uart): uint32 = uart.status[] and 0x3ff # In the receive FIFO
 
 proc setBaud*(uart: static Uart, baud: uint32) =
-  # The boot ROM clocks the port from the 40 MHz crystal, so the core's clock
-  # does not come into it. The divider has four fractional bits.
+  # Ports are clocked from the 40 MHz crystal, so the core's clock does not
+  # come into it. The divider has four fractional bits.
   let divider = 40_000_000'u32 * 16 div baud
   uart.clockDivider[] = (divider shr 4) or ((divider and 0xf) shl 20)
 
+proc init*(uart: static Uart, tx, rx: static Gpio, baud: uint32) =
+  ## Brings the port up on two pins, with 8 data bits and no parity. The
+  ## console is already up when a program starts.
+  claim("IO" & $tx.num, "UART" & $uart.num & " TX")
+  claim("IO" & $rx.num, "UART" & $uart.num & " RX")
+  peripheralClocks[] = peripheralClocks[] or (1'u32 shl uart.clockBit)
+  uart.clockConfig[] = 0x0370_0000 # From the crystal, undivided, as the boot ROM sets the console's
+  uart.setBaud(baud)
+  tx.routeOut(uart.signal)
+  rx.pullUp() # So that a line nobody is driving yet reads as idle, not as noise
+  rx.routeIn(uart.signal)
+
 proc send*(uart: static Uart, c: char) =
-  claim("IO" & $uart.tx.num, "UART" & $uart.num & " TX")
+  when uart.tx != noPin: claim("IO" & $uart.tx.num, "UART" & $uart.num & " TX")
   while (uart.status[] shr 16 and 0x3ff) >= 126: discard # Transmit FIFO is full
   uart.fifo[] = c.uint32
 

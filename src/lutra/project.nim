@@ -15,7 +15,7 @@
 ## `-d:port=/dev/ttyUSB1` before the task, or in `LUTRA_PORT`. `monitor` takes
 ## `-d:reset` to reset the board before it starts reading, and `-d:baud=...`.
 
-import std/[macros, os, strutils]
+import std/[macros, os, strutils, algorithm]
 
 const
   namedPort {.strdefine: "port".} = ""
@@ -50,32 +50,40 @@ proc elf*(program: string): string =
 proc compile*(program: string, switches = "") =
   selfExec arguments().switches & switches & " c " & quoteShell(program)
 
+proc serialPorts*(): seq[string] =
+  ## Every port a board could be on, in order
+  for file in listFiles("/dev"):
+    for prefix in ["ttyUSB", "ttyACM", "cu.usbserial", "cu.usbmodem"]:
+      if file.extractFilename.startsWith(prefix): result.add file
+  result.sort()
+
 proc serialPort*(): string =
   result = if namedPort != "": namedPort else: getEnv("LUTRA_PORT")
   if result == "":
-    var found: seq[string]
-    for file in listFiles("/dev"):
-      for prefix in ["ttyUSB", "ttyACM", "cu.usbserial", "cu.usbmodem"]:
-        if file.extractFilename.startsWith(prefix): found.add file
+    let found = serialPorts()
     if found.len != 1:
       quit "Expected one serial port and found " & $found.len & " " & $found &
         ". Name the board's with -d:port=... or LUTRA_PORT."
     result = found[0]
 
-proc console(resetCommand, reader: string): string =
-  ## A shell command that reads the board's console. The port is opened once
-  ## and held, so that nothing sent after a reset is lost before reading starts.
-  "exec 3<>" & serialPort() & "; " & resetCommand & "; stty " & $baud &
+proc console(port, resetCommand, reader: string): string =
+  ## A shell command that reads a board's console. The port is opened once and
+  ## held, so that nothing sent after a reset is lost before reading starts.
+  "exec 3<>" & port & "; " & resetCommand & "; stty " & $baud &
     " raw -echo -hupcl <&3; " & reader & " <&3"
 
-proc capture*(resetCommand, first, last: string): string =
-  ## Resets the board and returns what it prints from the line containing
-  ## `first` to the one containing `last`
+proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
+  ## A shell command that resets a board and prints what it prints, from the
+  ## line containing `first` to the one containing `last`
   putEnv("LUTRA_FIRST", first)
   putEnv("LUTRA_LAST", last)
-  let reader = "timeout 120 awk 'index($0, ENVIRON[\"LUTRA_FIRST\"]) { on = 1 } on { print } " &
-    "on && index($0, ENVIRON[\"LUTRA_LAST\"]) { exit }'"
-  gorge("sh -c " & quoteShell(console(resetCommand, reader))).replace("\r", "")
+  # Each line is flushed, so that a board that stops half way still shows how far it got
+  let reader = "timeout " & $seconds & " awk 'index($0, ENVIRON[\"LUTRA_FIRST\"]) { on = 1 } " &
+    "on { print; fflush() } on && index($0, ENVIRON[\"LUTRA_LAST\"]) { exit }'"
+  "sh -c " & quoteShell(console(port, resetCommand, reader))
+
+proc capture*(port, resetCommand, first, last: string, seconds = 120): string =
+  gorge(captureCommand(port, resetCommand, first, last, seconds)).replace("\r", "")
 
 template board*(name: static string) =
   importBoard(name)
@@ -114,7 +122,7 @@ template board*(name: static string) =
     flash(elf(program()), memory, serialPort())
 
   task monitor, "Read the board's console":
-    exec "sh -c " & quoteShell(console(
+    exec "sh -c " & quoteShell(console(serialPort(),
       if resetFirst: resetCommand(serialPort()) else: "true", "cat"))
 
   task size, "Build a program and show what each memory region holds":
@@ -128,7 +136,7 @@ template board*(name: static string) =
     checkFlasher()
     build(check & ".nim")
     flash(elf(check), memory, serialPort())
-    let got = capture(resetCommand(serialPort()),
+    let got = capture(serialPort(), resetCommand(serialPort()),
       expected.splitLines[0], expected.splitLines[^1]).strip
     echo got
     if got != expected:

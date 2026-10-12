@@ -6,7 +6,9 @@ const
   pullDownEnable = 1'u32 shl 7
   pullUpEnable = 1'u32 shl 8
   inputEnable = 1'u32 shl 9
+  driveStrength = 3'u32 shl 10
   function = 7'u32 shl 12
+  filterEnable = 1'u32 shl 15
   gpioFunction = 1'u32 shl 12
 
 template mask(pin: Gpio): uint32 = 1'u32 shl pin.num
@@ -18,17 +20,41 @@ template claim*(pin: static Gpio, role: static string) =
   ## used that template
   claim("IO" & $pin.num, role, at(instantiationInfo(-2)))
 
+# These four are for the chip's own peripherals, which claim pins for
+# themselves. Any peripheral signal can be routed to any pin.
+template routeOut*(pin: static Gpio, signal: int) =
+  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  pin.outSelect[] = signal.uint32
+  gpioEnableSet[] = pin.mask
+
+template routeIn*(pin: static Gpio, signal: int) =
+  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  Reg(gpioInSelect + 4 * signal.uint32)[] = pin.num.uint32 or (1 shl 6) # Bit 6: from a pin, not fixed
+
+template drive*(pin: static Gpio) =
+  pin.routeOut(0x80) # From `gpioOut` rather than a peripheral
+
+template driveGently*(pin: static Gpio) =
+  ## The weakest of the pin's four drive strengths, about 5 mA, for edges slow
+  ## enough not to ring on a wire
+  pin.mux[] = pin.mux[] and not driveStrength
+
+template filter*(pin: static Gpio) =
+  ## Ignores pulses on an input shorter than about 25 ns
+  pin.mux[] = pin.mux[] or filterEnable
+
+template listen*(pin: static Gpio) =
+  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  gpioEnableClear[] = pin.mask
+
 template output*(pin: static Gpio) =
   ## Drives the pin. It can still be `read`.
   pin.claim("a GPIO")
-  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
-  pin.outSelect[] = 0x80 # Driven by `gpioOut` rather than a peripheral
-  gpioEnableSet[] = pin.mask
+  pin.drive()
 
 template input*(pin: static Gpio) =
   pin.claim("a GPIO")
-  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
-  gpioEnableClear[] = pin.mask
+  pin.listen()
 
 template high*(pin: static Gpio) = gpioOutSet[] = pin.mask
 template low*(pin: static Gpio) = gpioOutClear[] = pin.mask

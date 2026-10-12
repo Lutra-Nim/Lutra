@@ -1,4 +1,6 @@
-## An LED on IO4, and the board's own button.
+## Blinks an LED wired from IO4, through a resistor, to ground, and reports the
+## board's own button. The LED on the board itself is an addressable one, which
+## needs a driver Lutra does not have yet.
 
 import lutra
 

@@ -1,5 +1,9 @@
 ## Toggles an LED on IO4 from an interrupt, each time the board's button is
 ## pressed.
+##
+## Nothing here is debounced, so one press can count more than once as the
+## contacts bounce. On this board, opening the serial port counts as a press
+## too: the USB bridge's reset circuit shares the button's pin.
 
 import lutra
 

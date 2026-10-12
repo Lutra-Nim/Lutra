@@ -468,10 +468,37 @@ Done, October 2026, as far as the exit criterion. Of the three libraries, only w
 
 ### M2: What Krill needs
 
+Done, October 2026.
+
 - SPI controller and target with DMA; hardware RNG; UART1.
 - Framed serial link.
 - Steady's link contract implemented.
-- **Exit:** two boards exchange checksummed buffers over UART and over SPI, and Krill's Phase 0 exit test (a dummy model split across two chips) runs on Lutra.
+- **Exit:** two boards exchange checksummed buffers over UART and over SPI. **Decided:** Krill's Phase 0 test (a dummy model split across two chips) is no longer part of this exit. It needs Send and Recv ops and a multi-board harness in Steady, which do not exist yet, and should then run on this with no change to Lutra.
+
+**Verified** by `nim link` in `checks/`, on two DevKitM-1 boards joined by jumper wires: 200 exchanges of 1 to 2000 bytes each way over UART1 at 921600 baud, then 200 full-duplex exchanges of the same sizes over SPI at 10 MHz, every buffer checked against a known pattern and its CRC on both boards. `nim wiring` checks the wires first and names any that is missing or crossed.
+
+| Piece | State |
+|---|---|
+| UART1 on any two pins | Verified |
+| Hardware RNG | Verified to change between reads. Its entropy was not assessed |
+| Framed serial link (`lutra/framing`) | Verified on the host and between boards |
+| SPI controller | Verified. It moves 64 bytes at a time through the bus's own buffer, with chip-select held low, and does not use DMA |
+| SPI target | Verified. It uses DMA, so a transfer can be any length up to 4092 bytes |
+| `SpiDevice` interface | In `hal/`; the link check's controller side goes through it |
+
+**Decided** for the links:
+
+- Framing is COBS with a CRC-16, and a zero on both sides of each packet. A receiver is back in step at the next zero, noise between packets cannot damage the next packet, and zeros with nothing between them are skipped.
+- Over SPI a target raises a "ready" wire while it has a transfer armed. The controller waits for it to rise before a transfer and to fall after, so it never clocks a target that is not listening.
+
+**Verified** findings that shaped the drivers:
+
+- **A board that resets disturbs its neighbour's lines.** A UART receiver hears stray bytes, mostly zeros, and an SPI target sees chip-select dip with no clock. So UART receive pins are pulled up, the framing skips empty packets, and a target ignores a transfer of no bytes.
+- **SPI needs gentle edges and a filtered clock.** At the pins' default drive strength a target counts clock edges twice on jumper wires and every transfer is garbage. With the controller's pins at their weakest drive about one edge in tens of thousands is still miscounted. Adding the chip's glitch filter to the target's clock input makes it clean. Lutra sets both.
+- **10 MHz is the fastest that works this way.** 16 and 20 MHz fail completely. Going faster probably needs the bus's own pins instead of the GPIO matrix, and a board instead of jumper wires. Not tried.
+- **Lengths must agree.** If the controller clocks more bytes than the target armed, the target's count and its next transfer were wrong in testing. Not investigated further.
+
+The two boards are wired pin to pin, except UART1, which crosses: IO0 to IO1 and IO1 to IO0, then IO3 (ready), IO5 (data into the controller), IO6 (clock), IO7 (data out of the controller), IO10 (chip-select) and ground.
 
 ### M3: First TinyML demo
 
@@ -587,7 +614,22 @@ The first two come from Steady's port notes. The rest were exercised on hardware
 | IO MUX | Per pin at `0x6000_9004 + 4n`. Bit 7 pull-down, bit 8 pull-up, bit 9 input enable, bits 14:12 function; function 1 is GPIO on every pin. With input enable set, an output pin's level can be read back |
 | System timer | Counts at 16 MHz regardless of core clock. Write bit 30 of `0x6002_3004` to latch, wait for bit 29, read high word at `0x6002_3040` and low word at `0x6002_3044`. Works without further setup |
 
-Not verified: UART1 (expected base `0x6001_0000`), the reset-default function of each pin, and anything about SPI, I2C, DMA, RNG or the interrupt controller. Take these from the ESP32-C3 Technical Reference Manual.
+On the DevKitM-1, IO9 is both the boot button and an input of the USB bridge's auto-download circuit. Opening or closing the serial port on the host pulls it low for about 2 µs, which an edge interrupt sees as a press. `examples/button.nim` does not debounce, and says so.
+
+Added for M2, on hardware unless marked:
+
+| Peripheral | Facts |
+|---|---|
+| UART1 | Base `0x6001_0000`, interrupt source 22. Its clock is already enabled at reset (bit 5 of `0x600C_0010`). Set `+0x78` to `0x0370_0000` to clock it from the crystal undivided, as the boot ROM does for UART0; it resets to a divide by two. A receive pin with nothing driving it yet reads as noise, so Lutra pulls it up |
+| GPIO matrix | Output: write a signal number to the pin's `0x6000_4554 + 4n`. Input: write the pin number with bit 6 set to `0x6000_4154 + 4 × signal`. Signals: UART0 6, UART1 9, both directions; SPI2 clock 63, data into the controller 64, data out 65, chip-select 68. A pin routed out can be routed back in, which tests a peripheral with nothing wired |
+| RNG | Read `0x6002_60B0` |
+| SPI2 as controller | Base `0x6002_4000`, clock already enabled at reset. `+0xE8` = 7 turns it on from the 80 MHz clock. `+0x10` bits 0, 27 and 28 give full duplex. `+0x0C` holds the divider *n* − 1 in bits 17:12 and 5:0, and *n*/2 − 1 in bits 11:6. Data goes in sixteen words from `+0x98`, low byte first. Length in bits, less one, at `+0x1C`. Then set bit 23 of `+0x00` and wait for it to clear, and the same for bit 24 |
+| DMA | Base `0x6003_F000`. Its clock is off and it is held in reset at boot: set bit 6 of `0x600C_0014` and clear bit 6 of `0x600C_001C`. Channel 0: reset by pulsing bit 0 of `+0x70` (in) and `+0xD0` (out); source 0 is SPI2, at `+0xA0` and `+0x100`; a descriptor's address, low 20 bits, goes to `+0x80` then bit 22 starts it (in), or `+0xE0` and bit 21 (out). A descriptor is three words: size in bits 11:0, length in 23:12, last in 30, owner in 31; the buffer; the next descriptor. On the SPI side `+0x30` bits 27 and 28 enable receive and send by DMA, and bits 29 and 31 reset their FIFOs |
+
+| SPI2 as a target | `+0xE0` bit 26 selects target mode and bit 27 resets it. Arm a transfer by resetting the DMA channel and the bus's FIFOs, starting both descriptors, clearing bit 12 of `+0x38`, then bits 23 and 24 of `+0x00` as for a controller. Bit 12 of `+0x3C` is set when chip-select rises, and `+0xE4` bits 17:0 hold the bits clocked. A receive descriptor's size need not be a multiple of four, and nothing is written past it |
+| Pin drive and filter | In a pin's IO MUX register, bits 11:10 set the drive strength (0 weakest, 2 at reset) and bit 15 enables a filter that ignores pulses shorter than about 25 ns |
+
+Not verified: the reset-default function of each pin, and anything about I2C. Take these from the ESP32-C3 Technical Reference Manual.
 
 ### A.5 Building and flashing
 
@@ -653,7 +695,7 @@ proc start() {.exportc: "_start",
 - **`p"text\n"` is a raw string literal.** The `\n` is not an escape. This is Ratel's `progmem` syntax and is one reason not to carry it over. `cstring"text\n"` is raw for the same reason; write `cstring("text\n")`.
 - **Setting `--os:any` in `config.nims` is too late to stop the host's libraries being linked.** Nim's own `nim.cfg` has already added `-ldl` for a Unix host. Clear it with `switch("gcc.options.linker", "")`.
 - **Nim does not link again when only a linker script's contents change.** It compares the link command, not the files it names.
-- **A generic procedure binds a name early if `system` already has one symbol by that name.** `link.send(c)` resolved to the channel `send` on the host, and `reset(port)` to `system.reset`. Declare such names with `mixin`.
+- **A generic procedure binds a name early if `system` already has one symbol by that name.** `link.send(c)` resolved to the channel `send` on the host, and `reset(port)` to `system.reset`. Declare such names with `mixin`. A library written against a concept needs this too, for `send` and `receive`, or it only compiles for the target.
 - **A template parameter is substituted into field accesses.** With a parameter called `name`, `file.name` in the body becomes `file."the argument"`.
 
 ---
