@@ -54,6 +54,20 @@ Needs Nim 2.2.6, Espressif's `riscv32-esp-elf` toolchain (on the `PATH`, or wher
 
 The programs in [examples/](examples) and [checks/](checks) are run from their own folders.
 
+## Checks
+
+Run from `checks/`. With two boards attached, the first three need the port named.
+
+| Command | Does |
+|---|---|
+| `nim selfcheck` | The board's own hardware: clock, time, pins, interrupts, flash, the fault report |
+| `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository |
+| `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
+| `nim wiring` | Checks the wires between two boards, listed at the top of [checks/wiring.nim](checks/wiring.nim) |
+| `nim link` | The two boards exchange checksummed buffers over UART and SPI |
+
+The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
+
 ## Layout
 
 | Path | Holds |
@@ -62,9 +76,10 @@ The programs in [examples/](examples) and [checks/](checks) are run from their o
 | `src/lutra/chips/` | What depends on the silicon: registers, clocks, memory map, peripherals |
 | `src/lutra/boards/` | What depends on the circuit board: pin names, wiring, flash size |
 | `src/lutra/hal/` | The interfaces libraries are written against |
+| `src/lutra/*.nim` | Libraries: printing, time, containers, framing |
 | `src/lutra/project.nim` | The host side: board selection and the tasks above |
-| `tools/` | The register generator |
-| `checks/` | Per-board hardware self-check programs, and Steady's benchmark |
+| `tools/` | Empty so far; for the register generator |
+| `checks/` | Hardware checks, for one board and for two wired together |
 | `examples/` | Example programs |
 | `tests/` | Host-side tests |
 | `docs/` | Design documentation |

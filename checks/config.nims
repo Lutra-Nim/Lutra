@@ -23,7 +23,10 @@ task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
   if "nonce " & nonce notin record: quit "That is not the image that was just built."
 
 task echo, "Send the board 64K at 921600 baud and check that it all comes back":
-  let (port, work) = (serialPort(), buildDir() / "echo")
+  let
+    port = serialPort()
+    work = buildDir() / "echo"
+    (sent, got) = (quoteShell(work / "sent"), quoteShell(work / "got"))
   mkDir work
   for (receive, switches) in [("polled", ""), ("buffered", "-d:buffered")]:
     build(thisDir() / "echo.nim", switches)
@@ -31,8 +34,9 @@ task echo, "Send the board 64K at 921600 baud and check that it all comes back":
     # The reset's own chatter, at the boot ROM's baud rate, is read and dropped
     exec "sh -c " & quoteShell("exec 3<>" & port & "; " & resetCommand(port) &
       "; stty 921600 raw -echo -hupcl <&3; sleep 1; timeout 1 cat <&3 >/dev/null" &
-      "; head -c 65536 /dev/urandom > sent; (timeout 4 cat <&3 > got) & cat sent >&3; wait" &
-      "; cmp sent got").replace("sent", work / "sent").replace("got", work / "got")
+      "; head -c 65536 /dev/urandom > " & sent &
+      "; (timeout 4 cat <&3 > " & got & ") & cat " & sent & " >&3; wait" &
+      "; cmp " & sent & " " & got)
     echo "All 65536 bytes came back, with receive ", receive, "."
 
 proc twoBoards(): seq[string] =

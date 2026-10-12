@@ -20,7 +20,7 @@ template claim*(pin: static Gpio, role: static string) =
   ## used that template
   claim("IO" & $pin.num, role, at(instantiationInfo(-2)))
 
-# These four are for the chip's own peripherals, which claim pins for
+# From here to `listen` is for the chip's own peripherals, which claim pins for
 # themselves. Any peripheral signal can be routed to any pin.
 template routeOut*(pin: static Gpio, signal: int) =
   pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
@@ -66,6 +66,15 @@ template read*(pin: static Gpio): bool =
   ## The level at the pin itself, whichever way it is configured
   (gpioIn[] and pin.mask) != 0
 
+template pullUp*(pin: static Gpio) =
+  pin.mux[] = pin.mux[] and not pullDownEnable or pullUpEnable
+
+template pullDown*(pin: static Gpio) =
+  pin.mux[] = pin.mux[] and not pullUpEnable or pullDownEnable
+
+template noPull*(pin: static Gpio) =
+  pin.mux[] = pin.mux[] and not (pullUpEnable or pullDownEnable)
+
 type Edge = enum rising = 1, falling, either
 
 # Pins nobody handles are left out of the link, as null entries
@@ -96,12 +105,3 @@ template onRising*(pin: static Gpio, body: untyped) =
 
 template onFalling*(pin: static Gpio, body: untyped) = onEdge(pin, falling, body)
 template onChange*(pin: static Gpio, body: untyped) = onEdge(pin, either, body)
-
-template pullUp*(pin: static Gpio) =
-  pin.mux[] = pin.mux[] and not pullDownEnable or pullUpEnable
-
-template pullDown*(pin: static Gpio) =
-  pin.mux[] = pin.mux[] and not pullUpEnable or pullDownEnable
-
-template noPull*(pin: static Gpio) =
-  pin.mux[] = pin.mux[] and not (pullUpEnable or pullDownEnable)

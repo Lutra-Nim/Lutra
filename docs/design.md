@@ -2,13 +2,15 @@
 
 **A hardware abstraction layer and library ecosystem in pure Nim, RISC-V first, built so that running a model on a microcontroller is as approachable as blinking an LED on an Arduino.**
 
-Status: design doc · v0.1 · October 2026
+Status: design doc · v0.2 · October 2026 · milestones M0 to M2 are built, M3 is next
 
 How to read the status of what follows:
 
 - **Decided** means the author has settled it.
 - **Proposed** means it is the current plan and has not been built or tested.
-- **Verified** means it was observed on real hardware during the ESP32-C3 port described in Appendix A.
+- **Verified** means it was observed on real hardware, during the ESP32-C3 port described in Appendix A or by one of Lutra's own checks.
+
+Someone picking the work up should read §1.2 first.
 
 ---
 
@@ -36,6 +38,41 @@ Non-goals:
 **Decided: Lutra**, the otter genus. It is aquatic, like the author's other project names (Krill, Rorqual). Otters are mustelids, like the ratel. It also sounds like "LUT", a look-up table.
 
 Name collisions on the Nimble directory, GitHub and trademarks have not been checked.
+
+### 1.2 Where things stand
+
+One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done and M3 is next. §11 says what each milestone verified, and its M3 entry has the plan and the questions still open.
+
+What exists, all exercised on hardware:
+
+| Area | What |
+|---|---|
+| Bring-up | Startup from the boot ROM, 160 MHz, flash mapping, a linker script generated from the board's memory description |
+| Pins | GPIO, pulls, edge interrupts as `pin.onFalling:` blocks, compile-time ownership |
+| UART | Both ports, polled or received through an interrupt into a ring buffer, on any pins |
+| SPI | Controller, and a target driven by DMA, with a ready line between them |
+| Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
+| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC |
+| Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
+
+How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`.
+
+| Run | From | Proves |
+|---|---|---|
+| `nim r` on each `tests/t*.nim` | `tests/` | Formatting, framing, the ring buffer, claims and the memory layout, on the host |
+| `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, no watchdog, the fault report. Takes 45 s |
+| `nim steady` | `checks/` | Steady's `kws` gives checksum `ab2fdbf1` |
+| `nim echo` | `checks/` | 64 KB at 921600 baud comes back intact, polled and buffered |
+| `nim wiring`, then `nim link` | `checks/` | Two wired boards exchange 200 buffers over UART1 and 200 over SPI |
+
+Conventions the code follows:
+
+- **A chip is a folder of small modules.** `registers.nim` holds every address. `peripherals.nim` holds the types and instances and has to stay pure Nim, because `config.nims` imports it too. `host.nim` is the NimScript side: compiler flags, linker script, flashing, the link audit. `memory.nim` is shared by both sides.
+- **Interfaces own the good names.** `Pin`, `ByteLink` and `SpiDevice` are concepts in `hal/`, so the chip's own types are called something else (`Gpio`, `SpiDeviceOn`).
+- **Whatever configures a pin claims it** (§5.4), and whatever a program may do only once says so with `once`.
+- **A hardware fact is not relied on until a check has exercised it.** Then it goes in Appendix A. Register addresses so far were written from memory of the manual and confirmed that way.
+- **Examples stay short.** A wart is noted in the example's comment, not coded around.
+- **Comments say why, briefly.** No ceremony, as in Ratel.
 
 ---
 
@@ -108,23 +145,26 @@ A new RISC-V chip reuses the architecture layer. A new board on a supported chip
 
 ### 4.2 Repository layout
 
-**Proposed.** Start as one repository and one Nimble package. Split chips into their own packages only once the interfaces have stopped moving.
+One repository and one Nimble package. Split chips into their own packages only once the interfaces have stopped moving.
 
 ```
 lutra/
   src/lutra.nim              `import lutra` gives the selected board
   src/lutra/
-    arch/riscv32/
-    chips/esp32c3/
+    project.nim              the host side: `board "..."` and the tasks (§4.3)
+    arch/riscv32/            start.nim, trap.nim
+    chips/esp32c3.nim        and chips/esp32c3/, one module per peripheral
     boards/esp32c3_devkitm1.nim
-    hal/                     the capability interfaces
-    fmt, containers, time, fixed, task    core libraries (§8.1)
-  tools/                     build, flash, monitor; register generator
-  checks/                    per-board hardware self-check programs
+    hal/                     the interfaces: pin, bytelink, spi
+    reg, claims              registers and compile-time ownership
+    fmt, time, containers, framing        libraries (§8)
+  checks/                    hardware checks, with their tasks in config.nims
   examples/
+  tests/                     host-side tests
+  tools/                     empty; for the register generator
 ```
 
-Separate packages, one per library, for everything in §8.2 to §8.4. Suggested naming: `lutra_<name>`, for example `lutra_lis3dh`, `lutra_at`, `lutra_mqtt`.
+Which libraries live here and which are separate packages is in §8.
 
 ### 4.3 Build tooling
 
@@ -139,7 +179,7 @@ Commands every board provides, run as `nim <command> [program.nim]`:
 
 | Command | Does |
 |---|---|
-| `build` | Compile and link. Plain `nim c` does the same |
+| `build` | Compile, link and check the image (§5.7). Plain `nim c` skips the checks |
 | `flash` | Build, package the image and program the board |
 | `monitor` | Read the console, with a reset option |
 | `size` | Build, and show per-region sizes against the board's budgets |
@@ -149,7 +189,9 @@ The self-check command is not called `check` because `nim check` already exists.
 
 Nim rejects flags it does not know, so options are defines placed before the command, for example `nim -d:port=/dev/ttyUSB1 flash hello.nim`. The serial port can also be named in `LUTRA_PORT`, and is found without help when only one is attached.
 
-Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time.
+Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time. Port names swap when boards are replugged, so the two-board checks simply take the two ports in name order.
+
+`checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `wiring` and `link`. `selfcheck` and these only work from Lutra's repository, because `checks/` is not installed with the package.
 
 The tasks use `sh`, `stty` and `awk`, so they run on Linux only for now.
 
@@ -296,15 +338,28 @@ Libraries are written against these interfaces and nothing else. This contract i
 **Decided:** each interface is a Nim concept in `src/lutra/hal/`, and a library takes one as a `static` parameter:
 
 ```nim
-type ByteLink* = concept
-  proc send(link: Self, c: char)
+type ByteSink* = concept
+  proc send(sink: Self, c: char)
 
-proc put*(link: static ByteLink, c: char) = link.send(c)
+proc put*(sink: static ByteSink, c: char) =
+  mixin send
+  sink.send(c)
 ```
 
-**Verified:** peripherals stay compile-time constants, the code is the same as without the concept, and a wrong argument is reported at the caller's line and names the interface. Concepts match the chip's templates and procedures that take `static` parameters. Pin and ByteLink (send only) exist so far; an interface is added when a chip implements it.
+**Verified:** peripherals stay compile-time constants, the code is the same as without the concept, and a wrong argument is reported at the caller's line and names the interface. Concepts match the chip's templates and procedures that take `static` parameters. A library has to declare the operations it calls with `mixin`, or it compiles for the target and not on the host (Appendix B).
 
-The chip's own types need different names from the interfaces, so the C3's pin type is `Gpio`.
+An interface is added when a chip implements it. So far:
+
+| Interface | Operations | Used by |
+|---|---|---|
+| `Pin` | output, input, high, low, toggle, read, pullUp, pullDown, noPull | The self-check |
+| `ByteSink` | send | Printing. Split from ByteLink so that printing can target things that cannot receive |
+| `ByteLink` | send, poll, receive | Framing |
+| `SpiDevice` | transfer | The link check |
+
+The chip's own types need different names from the interfaces, so the C3's pin type is `Gpio` and a device on its SPI bus is made with `spi2.device(select = IO10)`.
+
+Edge interrupts, UART set-up and the SPI target are not behind interfaces yet. They are called on the chip's types directly.
 
 **Proposed** set. Operation names are indicative.
 
@@ -340,13 +395,33 @@ Rules:
 | TinyML inputs | I2S; hardware RNG; raw flash storage | Microphones, sampling, weights and recorded data |
 | Later | USB device; I2C target; low-power modes; SPI cameras | Useful, not blocking |
 
-State of Lutra against this table: startup, clock, flash mapping, GPIO, UART0 transmit, time, delays, the cycle counter and allocation-free printing exist and are verified. Everything else is to be written.
+State of Lutra against this table, on the ESP32-C3:
+
+| Tier | Verified | Not written |
+|---|---|---|
+| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
+| Buses | SPI controller, SPI target with DMA | I2C; DMA for the SPI controller |
+| Timing and analog | | PWM, ADC, pulse capture, addressable LED |
+| TinyML inputs | Hardware RNG | I2S, raw flash storage |
 
 ---
 
 ## 8. Libraries
 
-Rule for placement: if every other library must agree on it, it is in the core package. Otherwise it is a separate package.
+**Proposed** rule for placement, October 2026. The author asked for ideas and has not yet confirmed this one:
+
+| Lives in | What | Examples |
+|---|---|---|
+| `lutra` itself, as `lutra/<name>` | Anything written only against the `hal/` interfaces, with no specific part number in it | Everything in §8.1; framing, the signal front-end, the sampling pipeline, the AT command engine, the settings store |
+| Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lis3dh`, an SX126x LoRa driver, a driver for one cellular modem |
+
+- Nim compiles only what a program imports, so a bundled library costs nothing in the image. What it costs is sharing Lutra's version: a breaking change in one bundled library is a breaking release of all.
+- One first-party driver should be a separate package from the start, to prove the interfaces can be used from outside this repository. The author's LIS3DHTR library is the natural one.
+- How settled a module is belongs in its documentation, not in where it lives.
+
+The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
+
+Written so far: printing (`fmt`), durations (`time`), a ring buffer (`containers`) and framing (`framing`).
 
 ### 8.1 Core
 
@@ -435,7 +510,7 @@ Steady stays independent of Lutra. Steady defines a minimal board contract and L
 
 **Verified** on the seed code: Steady's `kws` benchmark, with its ten `board_*` entry points implemented in Nim on top of the Ratel port, gives output checksum `ab2fdbf1`, identical to the C build. Whole-model cycles were 44.40M against 45.15M for the C build. The C figure came from an older build of Steady, so part of that difference may be changes in Steady itself. Weights were in flash at `0x3C10xxxx` and no allocator symbols were linked. The adapter was about 20 lines.
 
-**Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. The other five models have not been run.
+**Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. Later changes to Lutra moved code about and the count is now 44.26M. The other five models have not been run.
 
 Acceptance test for every board port: all six of Steady's reference models give the reference checksums, with cycle counts comparable to the C path.
 
@@ -502,10 +577,28 @@ The two boards are wired pin to pin, except UART1, which crosses: IO0 to IO1 and
 
 ### M3: First TinyML demo
 
+Next. Not started.
+
 - I2C, I2S, ADC, PWM, addressable LED.
 - Fixed-point math, signal front-end, sampling pipeline, data capture.
 - Starter drivers.
 - **Exit:** keyword spotting runs end to end from microphone to LED, and the front-end is bit-identical between host and device.
+
+What the author has on hand, as of October 2026:
+
+- **No microphone.** The exit above cannot be met as written. The author suggested using sample audio found online for now.
+- **An accelerometer**, believed to be a LIS3DHTR, which can be wired up. The author's Ratel library for it is at `github.com/garrettkinman/ratel-LIS3DHTR`, with a local checkout in `ratel-lis3dhtr` beside this repository.
+- **Two DevKitM-1 boards**, still wired together for M2. That wiring uses IO0, IO1, IO3, IO5, IO6, IO7 and IO10 on both. What is left free is IO4, which the self-check needs unconnected, the strapping pins IO2, IO8 and IO9, and the USB pins IO18 and IO19. An I2C sensor needs some link wires taken off, or the link pins reused.
+
+**Proposed** shape for M3 given that. None of this has been agreed, so settle it with the author first:
+
+1. **Front-end on recorded audio.** Fixed-point math and the signal front-end, fed from clips stored in flash, with the host and the device compared bit for bit. Steady's `kws` model is MLPerf Tiny's reference keyword-spotting model, `kws_ref_model.tflite` from `github.com/mlcommons/tiny` (see `tests/models/fetch.sh` in Steady). It takes 490 input values and gives 12 outputs. The front-end has to reproduce what that benchmark's training code computes from Speech Commands audio; that code has not been read yet, and neither the audio nor the benchmark's own test inputs have been fetched.
+2. **Keyword spotting on those clips**, with the result on the console and the LED. This stands in for the microphone until there is one.
+3. **I2C, and the LIS3DHTR as the first real sensor**, as the first separate driver package (§8). The sampling pipeline and data capture can be exercised with it.
+4. **The addressable LED.** Only the author can see whether it lights, so it needs them at the board.
+5. **I2S waits for a microphone.** ADC and PWM wait until something needs them.
+
+Questions to put to the author before starting: whether this reshaped exit is acceptable, whether the library rule in §8 stands, and how I2C devices should be declared, which is the first shareable bus under §5.4.
 
 ### M4: Second architecture
 
@@ -537,9 +630,19 @@ Three use models Steady already runs on the C3.
 
 **Open design questions, each worth a small experiment early:**
 
-- Which SVD generator to use, and whether generated register files are checked in.
+- Which SVD generator to use, and whether generated register files are checked in. The C3 has about sixty hand-written addresses now, and each new peripheral adds several.
 - How the heap opt-in is expressed.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
+- How a shared bus and its devices are declared, starting with I2C.
+
+**Known gaps, none blocking:**
+
+- Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
+- There are no deadlines or timeouts, so every wait is forever. A link that loses a packet hangs; the checks rely on the host's timeout. The wait hook of §5.5 is not there either.
+- The SPI controller copies through the bus's 64-byte buffer a byte at a time, which measured about 29% slower than the clock allows on a 300-byte transfer. Copying by words is the cheap fix. DMA is the full one, though it would not replace the copying path if, as believed and not tested, DMA cannot read from flash.
+- The trap vector is in flash (§5.5).
+- The tasks run on Linux only, and a board cannot be chosen by MAC address (§4.3).
+- An SPI transfer longer than the target armed goes wrong (§11, M2).
 
 **Risks:**
 
@@ -704,7 +807,9 @@ proc start() {.exportc: "_start",
 
 Machine-specific. Remove before publishing.
 
-- Board: ESP32-C3-DevKitM-1 on `/dev/ttyUSB0`, 115200 baud.
+- Boards: two ESP32-C3-DevKitM-1, with MAC addresses `84:f7:03:0a:a8:08` (the one used for M0 and M1) and `7c:df:a1:59:c9:70`. They appear as `/dev/ttyUSB0` and `/dev/ttyUSB1`, and which is which changes when they are replugged. `esptool --port <port> chip-id` prints the MAC.
+- The two are wired together as §11 describes for M2, and `nim wiring` confirms it.
+- Before running Lutra's tasks: `export ESPTOOL=~/Documents/GitHub/Steady/.venv/bin/esptool`, and `~/.nimble/bin` on `PATH` for `nim`.
 - Compiler: `~/.espressif/tools/riscv32-esp-elf/esp-2022r1-RC1-11.2.0/riscv32-esp-elf/bin/`, GCC 11.2. Not on `PATH`.
 - `esptool` 5.3.1: `~/Documents/GitHub/Steady/.venv/bin/esptool`. Not on `PATH`.
 - Nim 2.2.6.
@@ -715,6 +820,7 @@ stty -F /dev/ttyUSB0 115200 raw -echo -hupcl
 timeout 5 cat /dev/ttyUSB0
 ```
 
+- The same virtual environment's `python` has `pyserial`. Holding DTR asserted and releasing RTS pulls IO9 low, which presses the boot button from the host.
 - `esptool` leaves the port set to return from a read at once when no byte is waiting, which `cat` takes as the end of the file. That is why a capture started before `esptool` runs goes silent after the reset. Lutra's `monitor` and `selfcheck` open the port once, hold it open across the reset and set the mode again afterwards, so they read from the boot ROM's first byte.
 - Lutra's tasks find the compiler under `~/.espressif` without help. `esptool` has to be on `PATH` or named in `ESPTOOL`.
 - Steady's reference results for the C board path are in `~/Documents/GitHub/Steady/build/mcu/esp32c3/<model>/serial.txt`.
