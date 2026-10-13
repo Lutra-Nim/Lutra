@@ -2,7 +2,7 @@
 
 **A hardware abstraction layer and library ecosystem in pure Nim, RISC-V first, built so that running a model on a microcontroller is as approachable as blinking an LED on an Arduino.**
 
-Status: design doc · v0.3 · October 2026 · milestones M0 to M2 are built, and M3 but for sampling and data capture
+Status: design doc · v0.3 · October 2026 · milestones M0 to M3 are built, and M4 is next
 
 How to read the status of what follows:
 
@@ -41,9 +41,9 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done. M3 is built and meets its reshaped exit, with two things over: the author has not yet said what colours the LED shows, and sampling and data capture are not written. §11 says what each milestone verified, and its M3 entry ends with what is left.
+One board is supported, the ESP32-C3-DevKitM-1. Milestones M0 to M3 of §11 are done, and §11 says what each verified. M3 closed on its reshaped exit. Sampling and data capture were moved to M5, where the gesture demo will say what shape they should have.
 
-Where to pick up: ask the author about the LED, then settle with them whether sampling and data capture are designed now or M3 is closed without them and M4 begins. Neither has been discussed beyond what §11 records. All of M3 is on the branch `feature/m3-tinyml-demo`, which has not been merged into `main`.
+Where to pick up: M4, a Cortex-M board through the same interfaces. Nothing of it is designed yet.
 
 What exists, all exercised on hardware:
 
@@ -54,7 +54,7 @@ What exists, all exercised on hardware:
 | UART | Both ports, polled or received through an interrupt into a ring buffer, on any pins |
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
 | I2C | Controller, on any pins. Reads and writes verified against a real sensor |
-| LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin; nobody has yet seen it lit |
+| LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
 | Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
@@ -436,7 +436,7 @@ State of Lutra against this table, on the ESP32-C3:
 |---|---|---|
 | Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
 | Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
-| Timing and analog | Addressable LED, as far as the pulses on its pin | PWM, ADC, pulse capture |
+| Timing and analog | Addressable LED | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
 
 ---
@@ -612,7 +612,7 @@ The two boards are wired pin to pin, except UART1, which crosses: IO0 to IO1 and
 
 ### M3: First TinyML demo
 
-Built October 2026, except for what needs the author at the bench. "What is left" below is the list.
+Done, October 2026, on the reshaped exit below. "Left over" at the end is what it did not do.
 
 - I2C, I2S, ADC, PWM, addressable LED.
 - Fixed-point math, signal front-end, sampling pipeline, data capture.
@@ -636,8 +636,8 @@ What the author has on hand: no microphone and no multimeter; a soldering iron a
 | `I2cBus` interface, `lutra_lsm6ds33` | Verified on the real chip, through the package's own example: 26.4 readings a second where 26 were asked for, and flat on a table −7, 11, 1023 thousandths of g with noise of 2 to 3. It starts cleanly 10 times of 10. The gyroscope reads a steady few degrees a second at rest, which is its usual offset; its scale has not been checked by turning it |
 | `lutra_lis3mdl` | Verified on the real chip, through the package's own example: 10.5 readings a second where 10 were asked for, starting cleanly 6 times of 6, and a steady field of about 700 thousandths of a gauss with noise of 3 to 5. One axis moved by 400 when a scope probe was clipped on nearby; nobody has tried a magnet. Run together on the one bus, the two drivers gave 80.6 fields and 99.8 accelerations a second where 80 and 104 were asked for |
 | IO18 and IO19 as ordinary pins | Verified |
-| Addressable LED | The 24 pulses are verified on the pin. Nobody has seen it lit |
-| Sampling pipeline, data capture | Not written |
+| Addressable LED | Verified. The 24 pulses are checked on the pin, and `examples/rgb.nim` shows red, green and blue in that order |
+| Sampling pipeline, data capture | Not written. Moved to M5 |
 | I2S, ADC, PWM | Not written, as decided |
 
 **Decided** along the way:
@@ -676,12 +676,11 @@ mfcc.compute(samples, coefficients, fullScale = peak)
 - **Its header had to be soldered.** Loose in its holes, nothing answered, and a test with the pins' weak pull-downs showed why: the breakout's pull-up resistors were not reaching the pins.
 - **Its ADM pin has to be wired to ground.** Left alone, the magnetometer was at 0x1E whenever it had a measurement waiting and at 0x1C whenever it had not, in step with its own sampling: its address pin was following its data-ready pin, which is its neighbour both on the chip and on the board's four-hole row. Adafruit's design files (`github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`) give ADM a 10 kΩ resistor to ground, which on this board is evidently not doing its job. A scope across the two pins with the power off showed pickup, where a short would have shown nothing, and with the scope's ground clip left on ADM the address held still. A wire from ADM to GND holds it at 0x1C: 2000 of 2000 in every state.
 
-What is left, in the order to do it:
+Left over:
 
-1. **Look at the LED.** `nim flash rgb.nim` in `examples/` should step it through red, green and blue. Colours in another order mean this LED takes them in another order than green, red, blue. `nim keywords` shows blue while it works on a clip, then green.
-2. **Sampling and data capture.** Neither is written, because nothing yet says what shape they should have. For now a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints. A window of samples handed to a model wants designing against the gesture model of the demos, which does not exist.
-3. **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
-4. **Two scales nobody has checked.** The gyroscope's, which wants the board turned at a known rate, and the magnetometer's, which read about 700 thousandths of a gauss where the Earth's field alone is 250 to 650. A magnet brought near would at least show it responds.
+- **Sampling and data capture.** **Decided:** they wait for M5. Nothing yet says what shape they should have: a window of samples handed to a model wants designing against the gesture model of the demos, which does not exist. Until then a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints.
+- **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
+- **Two scales nobody has checked.** The gyroscope's, which wants the board turned at a known rate, and the magnetometer's, which read about 700 thousandths of a gauss where the Earth's field alone is 250 to 650. A magnet brought near would at least show it responds.
 
 ### M4: Second architecture
 
@@ -692,6 +691,7 @@ What is left, in the order to do it:
 
 - Context primitive, cooperative tasks, the wait hook.
 - AT engine, sockets, MQTT, LoRa driver, settings store.
+- Sampling pipeline and data capture, carried over from M3 and designed against the gesture demo's model.
 - **Exit:** a gesture-recognition demo publishing over MQTT, and an anomaly-detection demo sending a LoRa packet.
 
 A first serious public release is M0 through M5.
@@ -716,7 +716,7 @@ Three use models Steady already runs on the C3.
 - Which SVD generator to use, and whether generated register files are checked in. The C3 has about sixty hand-written addresses now, and each new peripheral adds several.
 - How the heap opt-in is expressed.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
-- What a sampling pipeline and data capture look like (§11, M3).
+- What a sampling pipeline and data capture look like (§11, M5).
 
 **Known gaps, none blocking:**
 
@@ -829,7 +829,7 @@ Added for M3, on hardware unless marked:
 | I2C0, a transaction | Up to eight commands at `+0x58 + 4n`: operation in bits 13:11 (6 start, 1 write, 3 read, 2 stop), a byte count in 7:0, bit 8 to expect an acknowledgement of a write, bit 10 to leave a read unacknowledged. Bytes to send, each address included, go to `+0x1C`, which also gives the bytes read. The counts waiting are in `+0x08`, bits 23:18 out and 13:8 in, of 32 each way. Pulse bits 13:12 of `+0x18` to empty both, write ones to `+0x24` to clear events, then set bit 11 and bit 5 of `+0x04`. In `+0x20`, bit 7 is "complete" and bit 10 "not acknowledged". Bit 10 of `+0x04` resets the state machine, which is not enough after a refusal (§11, M3): bit 7 of `0x600C_0018`, set and cleared, resets the whole peripheral, timing registers included |
 | I2C0, a held line | With SCL low: bit 13 of `+0x20` within a few milliseconds, and never bit 7. With SDA low: bits 5, 13 and 14 the first time, and nothing at all the second |
 | Pulse generator (RMT) | Base `0x6001_6000`, channel 0 out is signal 51. Its clock is off at reset: set bit 9 of `0x600C_0010`. `+0x68` = bits 31, 26, 24 and 0: on, from the 80 MHz clock undivided, with its memory written directly. `+0x10` for channel 0: bit 16 for one block of memory, a divider of 1 in bits 15:8, bit 6 to hold the pin low when idle. The channel's 48 words are at `+0x400`; a word is a time in ticks in bits 14:0 and a level in bit 15, then the same again in 30:16 and 31, and a zero word ends the list. Pulse bits 2:1 of `+0x10` to rewind, set bit 24 and then bit 0 to play, and bit 0 of `+0x38` says it is done; clear it at `+0x44` |
-| The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin. Whether the LED agrees has not been seen |
+| The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin, and the LED shows red, green and blue when asked for each |
 
 Not verified: the reset-default function of each pin. Take it from the ESP32-C3 Technical Reference Manual.
 
