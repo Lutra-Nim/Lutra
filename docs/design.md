@@ -2,7 +2,7 @@
 
 **A hardware abstraction layer and library ecosystem in pure Nim, RISC-V first, built so that running a model on a microcontroller is as approachable as blinking an LED on an Arduino.**
 
-Status: design doc · v0.3 · October 2026 · milestones M0 to M2 are built, and M3 as far as it can be without the author at the bench
+Status: design doc · v0.3 · October 2026 · milestones M0 to M2 are built, and M3 but for sampling and data capture
 
 How to read the status of what follows:
 
@@ -41,7 +41,9 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done. M3 is built except for what needs the author at the bench: nobody has looked at the LED, and sampling and data capture are not written. §11 says what each milestone verified, and its M3 entry lists what is left.
+One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done. M3 is built and meets its reshaped exit, with two things over: the author has not yet said what colours the LED shows, and sampling and data capture are not written. §11 says what each milestone verified, and its M3 entry ends with what is left.
+
+Where to pick up: ask the author about the LED, then settle with them whether sampling and data capture are designed now or M3 is closed without them and M4 begins. Neither has been discussed beyond what §11 records. All of M3 is on the branch `feature/m3-tinyml-demo`, which has not been merged into `main`.
 
 What exists, all exercised on hardware:
 
@@ -55,7 +57,7 @@ What exists, all exercised on hardware:
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin; nobody has yet seen it lit |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
 | Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
-| Beside this repository | Two driver packages, both verified on the real chips: `lutra-lsm6ds33`, for an accelerometer and gyroscope, and `lutra-lis3mdl`, for a magnetometer |
+| Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
 
 How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`.
@@ -68,6 +70,7 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 | `nim echo` | `checks/` | 64 KB at 921600 baud comes back intact, polled and buffered |
 | `nim wiring`, then `nim link` | `checks/` | Two wired boards exchange 200 buffers over UART1 and 200 over SPI |
 | `nim keywords` | `checks/` | Twelve recorded words are recognised on the board, from features that match the host's bit for bit. The first run downloads 112 MB of recordings |
+| `nim sensors` | `checks/` | With the sensor board on IO18 and IO19, lying still: both chips answer through their drivers at the rates asked for, gravity is 1 g, and a refused transaction does not spoil the next |
 | `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 
 Conventions the code follows:
@@ -448,7 +451,7 @@ State of Lutra against this table, on the ESP32-C3:
 | Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lsm6ds33`, an SX126x LoRa driver, a driver for one cellular modem |
 
 - Nim compiles only what a program imports, so a bundled library costs nothing in the image. What it costs is sharing Lutra's version: a breaking change in one bundled library is a breaking release of all.
-- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33` and `lutra_lis3mdl`, in `lutra-lsm6ds33` and `lutra-lis3mdl` beside this repository. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them.
+- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/garrettkinman/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/garrettkinman/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them, in a folder named `lutra`, and `nim sensors` finds them the same way, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
 - How settled a module is belongs in its documentation, not in where it lives.
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
@@ -618,7 +621,7 @@ Built October 2026, except for what needs the author at the bench. "What is left
 
 **Decided:** the author has no microphone, so the exit is reshaped. Keyword spotting runs end to end from recorded speech held in flash to the LED, with the front-end bit-identical between host and device; and an I2C sensor is read through a driver in a package of its own. I2S waits for a microphone. ADC and PWM wait until something needs them.
 
-What the author has on hand: no microphone; Adafruit's LSM6DS33 + LIS3MDL breakout, product 4485, which is an accelerometer and gyroscope at 0x6A and a magnetometer at 0x1C; and two DevKitM-1 boards wired together for M2, which uses IO0, IO1, IO3, IO5, IO6, IO7 and IO10 on both. Of the rest, IO18 and IO19 are for the sensor board, the self-check needs IO4 unconnected, IO8 is the LED, and IO2, IO8 and IO9 are strapping pins.
+What the author has on hand: no microphone and no multimeter; a soldering iron and a small portable oscilloscope; Adafruit's LSM6DS33 + LIS3MDL breakout, product 4485, which is an accelerometer and gyroscope at 0x6A and a magnetometer at 0x1C; and two DevKitM-1 boards wired together for M2, which uses IO0, IO1, IO3, IO5, IO6, IO7 and IO10 on both. Of the rest, IO18 and IO19 are for the sensor board, the self-check needs IO4 unconnected, IO8 is the LED, and IO2, IO8 and IO9 are strapping pins.
 
 **Verified** by `nim keywords` in `checks/`. Twelve one-second clips from the Speech Commands test set, one for each word the model knows, are held in flash. Each goes through `lutra/signal` and Steady's `kws` model, on the host and then on the board. The board recognises all twelve, and its 490 features for each clip have the same checksum as the host's. A clip takes the board 184 ms for the features and 277 ms for the model.
 
@@ -629,7 +632,7 @@ What the author has on hand: no microphone; Adafruit's LSM6DS33 + LIS3MDL breako
 | Arithmetic (`lutra/fixed`) | A square root and base-2 and natural logarithms of 64-bit whole numbers. Verified on the host against floating point |
 | Front-end (`lutra/signal`) | Mel-frequency cepstral coefficients of one frame. Verified on the host against the same sums in floating point, and on the board against the host |
 | Keyword spotting on recorded clips | Verified, as above |
-| I2C controller | Verified. With nothing attached: an address nobody has is refused in 110 µs at 100 kHz, a held line is given up on, and the bus works again afterwards. With the sensor board: 2000 of 2000 addresses acknowledged, a register written and read back 500 times of 500, reads of 1, 6, 12 and 16 bytes, and the transaction after a refused one working 800 times of 800 |
+| I2C controller | Verified, by the self-check with nothing attached and by `nim sensors` with the sensor board. With nothing attached: an address nobody has is refused in 110 µs at 100 kHz, a held line is given up on, and the bus works again afterwards. With the sensor board: 2000 of 2000 addresses acknowledged, a register written and read back 500 times of 500, reads of 1, 6, 12 and 16 bytes, and the transaction after a refused one working 800 times of 800 |
 | `I2cBus` interface, `lutra_lsm6ds33` | Verified on the real chip, through the package's own example: 26.4 readings a second where 26 were asked for, and flat on a table −7, 11, 1023 thousandths of g with noise of 2 to 3. It starts cleanly 10 times of 10. The gyroscope reads a steady few degrees a second at rest, which is its usual offset; its scale has not been checked by turning it |
 | `lutra_lis3mdl` | Verified on the real chip, through the package's own example: 10.5 readings a second where 10 were asked for, starting cleanly 6 times of 6, and a steady field of about 700 thousandths of a gauss with noise of 3 to 5. One axis moved by 400 when a scope probe was clipped on nearby; nobody has tried a magnet. Run together on the one bus, the two drivers gave 80.6 fields and 99.8 accelerations a second where 80 and 104 were asked for |
 | IO18 and IO19 as ordinary pins | Verified |
@@ -678,6 +681,7 @@ What is left, in the order to do it:
 1. **Look at the LED.** `nim flash rgb.nim` in `examples/` should step it through red, green and blue. Colours in another order mean this LED takes them in another order than green, red, blue. `nim keywords` shows blue while it works on a clip, then green.
 2. **Sampling and data capture.** Neither is written, because nothing yet says what shape they should have. For now a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints. A window of samples handed to a model wants designing against the gesture model of the demos, which does not exist.
 3. **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
+4. **Two scales nobody has checked.** The gyroscope's, which wants the board turned at a known rate, and the magnetometer's, which read about 700 thousandths of a gauss where the Earth's field alone is 250 to 650. A magnet brought near would at least show it responds.
 
 ### M4: Second architecture
 
@@ -717,7 +721,7 @@ Three use models Steady already runs on the C3.
 **Known gaps, none blocking:**
 
 - Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
-- Nothing in the self-check covers the transaction after a refused one, because that takes a device to refuse and a device to answer. It was checked by hand against the sensor board.
+- Nothing checks that `i2c0.init` frees a sensor cut off mid-read by a reset. It was tried by hand, with a program that read without pause and was reset 16 times.
 - There are no deadlines or timeouts, so every wait is forever. A link that loses a packet hangs; the checks rely on the host's timeout. The wait hook of §5.5 is not there either. The one exception is an I2C transaction, which has a deadline of its own.
 - An I2C transaction carries at most 254 bytes out and 256 in, and a longer one is refused.
 - The front-end takes 3.8 ms a frame, a fifth of the time the sound takes to arrive. A transform that used its input being real, and band sums that skipped their zero weights, would cut that. Neither has been needed.
@@ -923,15 +927,17 @@ timeout 5 cat /dev/ttyUSB0
 - `esptool` leaves the port set to return from a read at once when no byte is waiting, which `cat` takes as the end of the file. That is why a capture started before `esptool` runs goes silent after the reset. Lutra's `monitor` and `selfcheck` open the port once, hold it open across the reset and set the mode again afterwards, so they read from the boot ROM's first byte.
 - Lutra's tasks find the compiler under `~/.espressif` without help. `esptool` has to be on `PATH` or named in `ESPTOOL`.
 - Steady's reference results for the C board path are in `~/Documents/GitHub/Steady/build/mcu/esp32c3/<model>/serial.txt`.
-- `~/Documents/GitHub/lutra-lsm6ds33` and `~/Documents/GitHub/lutra-lis3mdl` are the sensor drivers' packages: local git repositories with nothing committed and no remote.
+- `~/Documents/GitHub/lutra-lsm6ds33` and `~/Documents/GitHub/lutra-lis3mdl` are the sensor drivers' packages, each on `main` with its remote on GitHub (§8).
 - The Speech Commands test set is unpacked in `checks/build/keywords/`, 150 MB, so `nim keywords` does not download it again. Deleting `checks/build` brings the download back.
-- The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3). The other DevKitM-1 was unplugged on 13 October.
+- The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3). The other DevKitM-1 was unplugged on 13 October, so `nim wiring` and `nim link` want it plugged in again, and with one board attached no port needs naming.
+- Adafruit's design files for the sensor board, which settled what its pins join, are at `github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`.
 
 ---
 
 ## References
 
 - Ratel: `github.com/PMunch/ratel`. Fork with the C3 port: `github.com/garrettkinman/ratel`.
+- Driver packages: `github.com/garrettkinman/Lutra-LSM6DS33` and `github.com/garrettkinman/Lutra-LIS3MDL`.
 - Steady: `github.com/garrettkinman/Steady`. See `tests/mcu/boards/esp32c3/` for the original C port and its notes, and `tests/mcu/bench.nim.in` for the board contract.
 - Krill & Reflex project doc, §7 "Track R" and §3 "Hardware budget".
 - Espressif: ESP32-C3 Technical Reference Manual; SVD files; `esp32c3.rom.ld` in esp-idf for ROM routine addresses.

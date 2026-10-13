@@ -111,3 +111,13 @@ task keywords, "Recognise recorded words, and check the board against the host b
   if got.join("\n") != expected:
     quit "\nThe board and the host DISAGREE. The host printed:\n" & expected
   echo "\nThe board and the host agree."
+
+task sensors, "Read an accelerometer and a magnetometer on IO18 and IO19 through their driver packages":
+  # The packages are expected checked out beside this repository
+  build(thisDir() / "sensors.nim", " --path:" & thisDir() / "../../lutra-lsm6ds33/src" &
+    " --path:" & thisDir() / "../../lutra-lis3mdl/src")
+  flash(elf("sensors"), memory, serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
+  echo report
+  if "FAILED" in report or "END" notin report: quit "The sensor check FAILED."
+  echo "\nThe sensor check passed."

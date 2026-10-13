@@ -54,7 +54,7 @@ Needs Nim 2.2.6, Espressif's `riscv32-esp-elf` toolchain (on the `PATH`, or wher
 
 The programs in [examples/](examples) and [checks/](checks) are run from their own folders. `nim flash rgb.nim` in `examples/` needs nothing wired.
 
-Drivers for parts that are not on the board are packages of their own. The first are `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer.
+Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/garrettkinman/Lutra-LSM6DS33), for an accelerometer and gyroscope, and [lutra_lis3mdl](https://github.com/garrettkinman/Lutra-LIS3MDL), for a magnetometer.
 
 ## Checks
 
@@ -67,6 +67,7 @@ Run from `checks/`. With two boards attached, those for one board need the port 
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
 | `nim wiring` | Checks the wires between two boards, listed at the top of [checks/wiring.nim](checks/wiring.nim) |
 | `nim link` | The two boards exchange checksummed buffers over UART and SPI |
+| `nim sensors` | Reads an LSM6DS33 and a LIS3MDL on IO18 and IO19 through their driver packages, checked out beside this repository |
 | `nim keywords` | Recognises twelve recorded words with Steady's `kws` model, and checks the board's features against the host's bit for bit. The first run downloads 112 MB of recordings. `nim -d:testset keywords` scores all 4890 on the host |
 
 The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
