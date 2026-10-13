@@ -1,5 +1,5 @@
-## Toggles an LED on IO4 from an interrupt, each time the board's button is
-## pressed.
+## Steps the board's own LED through red, green and blue from an interrupt,
+## each time the board's button is pressed.
 ##
 ## Nothing here is debounced, so one press can count more than once as the
 ## contacts bounce. On this board, opening the serial port counts as a press
@@ -7,16 +7,17 @@
 
 import lutra
 
-const led = IO4
 var presses {.volatile.}: uint32 # Changed by the handler, so read it afresh each time
 
-led.output()
 bootButton.input()
 bootButton.pullUp()
 
 bootButton.onFalling:
-  led.toggle()
   inc presses
+  case presses mod 3
+  of 1: rgbLed.color(red = 20)
+  of 2: rgbLed.color(green = 20)
+  else: rgbLed.color(blue = 20)
 
 while true:
   print presses, " presses\n"
