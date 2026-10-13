@@ -10,6 +10,10 @@ type
     clockBit*: int ## In the system's clock enable register
     tx*: Gpio ## Where the boot ROM leaves it, if it does
 
+  I2c* = object
+    num*: int
+    base*: uint32
+
   Spi* = object
     num*: int
     base*: uint32
@@ -24,8 +28,13 @@ type
     bus*: Spi
     ready*: Gpio ## Raised while it waits for the controller, if wired
 
+  RgbLed* = object
+    ## An addressable LED, of the WS2812 or SK6812 kind, on a pin of its own
+    pin*: Gpio
+
 const
   noPin* = Gpio(num: -1)
+  i2c0* = I2c(num: 0, base: 0x6001_3000'u32)
   spi2* = Spi(num: 2, base: 0x6002_4000'u32, dmaSource: 0)
   uart0* = Uart(num: 0, base: 0x6000_0000'u32, signal: 6, clockBit: 2, tx: Gpio(num: 21))
   uart1* = Uart(num: 1, base: 0x6001_0000'u32, signal: 9, clockBit: 5, tx: noPin)

@@ -6,14 +6,18 @@ const
   steady {.strdefine.} = thisDir() / "../../Steady" ## A checkout of Steady
   model {.strdefine.} = "kws"
 
-task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
-  let
-    work = buildDir() / "steady" / model
-    nonce = gorge("date +%s")
+proc generate(model, work: string) =
+  ## Steady's code for one of its test models
   mkDir work
   exec "nim c --hints:off -d:release --out:" & buildDir() / "steadyc" & " " & steady / "src/steadyc.nim"
   exec buildDir() / "steadyc " & steady / "tests/models" / model & ".tflite -o " & work &
     " -n " & model & " --no-capi -q"
+
+task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
+  let
+    work = buildDir() / "steady" / model
+    nonce = gorge("date +%s")
+  generate(model, work)
   writeFile(work / "bench.nim", readFile(steady / "tests/mcu/bench.nim.in").replace("@MODEL@", model))
   build(thisDir() / "steady.nim", "-d:steadyProfile -d:steadyNonce=" & nonce &
     " --path:" & steady / "src" & " --path:" & work)
@@ -75,3 +79,35 @@ task link, "Two wired boards exchange checksummed buffers over UART and SPI":
     if "uart 200 of 200" notin report or "spi 200 of 200" notin report:
       quit "The link check FAILED."
   echo "The link check passed."
+
+task keywords, "Recognise recorded words, and check the board against the host bit for bit":
+  let
+    work = buildDir() / "keywords"
+    archive = work / "speech_commands_test_set_v0.02.tar.gz"
+    paths = " --path:" & steady / "src --path:" & work
+    host = "nim c --skipProjCfg --hints:off -d:release --path:" & thisDir() / "../src" & paths &
+      " --nimcache:" & buildDir() / "nimcache/keywords_host" & " --out:" & work / "host "
+  generate("kws", work)
+  if not dirExists(work / "yes"):
+    # 112 MB, once. It is someone else's to hand out, so it is not kept in the repository.
+    exec "curl -L --fail -o " & archive & " http://download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz"
+    if "cc2a00c1147c2254e9be3fa0f779d8c17421dc349b86366567a8edfa9acd51df" notin gorge("sha256sum " & archive):
+      quit "The test set is not the file this check was written against."
+    exec "tar -xzf " & archive & " -C " & work
+    rmFile archive
+  if defined(testset):
+    exec host & "-d:testset " & thisDir() / "keywords.nim"
+    exec work / "host"
+    return
+  exec host & thisDir() / "keywords.nim"
+  let expected = gorge(work / "host").strip
+  build(thisDir() / "keywords.nim", paths)
+  flash(elf("keywords"), memory, serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END").strip
+  echo report
+  var got: seq[string]
+  for line in report.splitLines:
+    if not line.startsWith("time"): got.add line
+  if got.join("\n") != expected:
+    quit "\nThe board and the host DISAGREE. The host printed:\n" & expected
+  echo "\nThe board and the host agree."

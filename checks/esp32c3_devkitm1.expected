@@ -8,5 +8,9 @@ gpio pull-down ok
 interrupts ok
 random ok
 constants ok
+i2c refusal ok
+i2c held line ok
+i2c recovery ok
+led pulses ok
 idle ok
 Guru Meditation Error: Core 0 panic'ed (Illegal instruction)

@@ -24,5 +24,5 @@ const
   IO20* = Gpio(num: 20)
   IO21* = Gpio(num: 21)
 
-  rgbLed* = IO8
+  rgbLed* = RgbLed(pin: IO8)
   bootButton* = IO9

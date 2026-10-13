@@ -2,7 +2,7 @@
 
 **A hardware abstraction layer and library ecosystem in pure Nim, RISC-V first, built so that running a model on a microcontroller is as approachable as blinking an LED on an Arduino.**
 
-Status: design doc · v0.2 · October 2026 · milestones M0 to M2 are built, M3 is next
+Status: design doc · v0.3 · October 2026 · milestones M0 to M2 are built, and M3 as far as it can be without the author at the bench
 
 How to read the status of what follows:
 
@@ -41,7 +41,7 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done and M3 is next. §11 says what each milestone verified, and its M3 entry has the plan and the questions still open.
+One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done. M3 is built except for what needs the author at the bench: nobody has looked at the LED, and sampling and data capture are not written. §11 says what each milestone verified, and its M3 entry lists what is left.
 
 What exists, all exercised on hardware:
 
@@ -51,19 +51,24 @@ What exists, all exercised on hardware:
 | Pins | GPIO, pulls, edge interrupts as `pin.onFalling:` blocks, compile-time ownership |
 | UART | Both ports, polled or received through an interrupt into a ring buffer, on any pins |
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
+| I2C | Controller, on any pins. Reads and writes verified against a real sensor |
+| LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin; nobody has yet seen it lit |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
-| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC |
+| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
+| Beside this repository | Two driver packages, both verified on the real chips: `lutra-lsm6ds33`, for an accelerometer and gyroscope, and `lutra-lis3mdl`, for a magnetometer |
 | Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
 
 How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`.
 
 | Run | From | Proves |
 |---|---|---|
-| `nim r` on each `tests/t*.nim` | `tests/` | Formatting, framing, the ring buffer, claims and the memory layout, on the host |
-| `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, no watchdog, the fault report. Takes 45 s |
+| `nim r` on each `tests/t*.nim` | `tests/` | Formatting, framing, the ring buffer, claims, the memory layout, the arithmetic and the front-end, on the host |
+| `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, I2C with nothing on it, the LED's pulses, no watchdog, the fault report. Takes 45 s |
 | `nim steady` | `checks/` | Steady's `kws` gives checksum `ab2fdbf1` |
 | `nim echo` | `checks/` | 64 KB at 921600 baud comes back intact, polled and buffered |
 | `nim wiring`, then `nim link` | `checks/` | Two wired boards exchange 200 buffers over UART1 and 200 over SPI |
+| `nim keywords` | `checks/` | Twelve recorded words are recognised on the board, from features that match the host's bit for bit. The first run downloads 112 MB of recordings |
+| `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 
 Conventions the code follows:
 
@@ -71,6 +76,7 @@ Conventions the code follows:
 - **Interfaces own the good names.** `Pin`, `ByteLink` and `SpiDevice` are concepts in `hal/`, so the chip's own types are called something else (`Gpio`, `SpiDeviceOn`).
 - **Whatever configures a pin claims it** (§5.4), and whatever a program may do only once says so with `once`.
 - **A hardware fact is not relied on until a check has exercised it.** Then it goes in Appendix A. Register addresses so far were written from memory of the manual and confirmed that way.
+- **Arithmetic that has to agree with the host names its sizes.** `int` is 32 bits on the board and 64 on the host, so `fixed` and `signal` use `int32`, `int64` and `uint64` throughout.
 - **Examples stay short.** A wart is noted in the example's comment, not coded around.
 - **Comments say why, briefly.** No ceremony, as in Ratel.
 
@@ -155,9 +161,9 @@ lutra/
     arch/riscv32/            start.nim, trap.nim
     chips/esp32c3.nim        and chips/esp32c3/, one module per peripheral
     boards/esp32c3_devkitm1.nim
-    hal/                     the interfaces: pin, bytelink, spi
+    hal/                     the interfaces: pin, bytelink, i2c, spi
     reg, claims              registers and compile-time ownership
-    fmt, time, containers, framing        libraries (§8)
+    fmt, time, containers, framing, fixed, signal        libraries (§8)
   checks/                    hardware checks, with their tasks in config.nims
   examples/
   tests/                     host-side tests
@@ -258,6 +264,17 @@ IO21 is claimed as UART0 TX and as a GPIO at blink.nim(8)
 
 **Verified** mechanism: a macro, `claim(resource, role, where)` in `lutra/claims`, records claims in a `std/macrocache` table. It works across modules and inside procedures with `static` parameters.
 
+**Decided** for I2C, the first shared bus: the bus is brought up once, with its pins, and a driver is given the bus and knows its own part's address.
+
+```nim
+const imu = lsm6ds33(i2c0)   # At 0x6A unless told otherwise
+
+i2c0.init(sda = IO18, scl = IO19)
+imu.init()
+```
+
+The bus claims its two pins. Nothing is claimed for a device, so two drivers given one address are not caught.
+
 Not built: naming pins in an optional declaration block, and printing a wiring table from the claims.
 
 ### 5.5 Interrupts, trap entry and tasking
@@ -356,8 +373,23 @@ An interface is added when a chip implements it. So far:
 | `ByteSink` | send | Printing. Split from ByteLink so that printing can target things that cannot receive |
 | `ByteLink` | send, poll, receive | Framing |
 | `SpiDevice` | transfer | The link check |
+| `I2cBus` | write, read, writeRead, each to an address, and each false if the device did not acknowledge | `lutra_lsm6ds33`, `lutra_lis3mdl` |
 
 The chip's own types need different names from the interfaces, so the C3's pin type is `Gpio` and a device on its SPI bus is made with `spi2.device(select = IO10)`.
+
+**Verified** from outside this repository: `lutra_lsm6ds33` and `lutra_lis3mdl` each import `lutra/hal/i2c` and nothing else of Lutra. A driver there is an object that holds its bus, and its procedures take that object as a `static` parameter:
+
+```nim
+type Lis3mdl*[B] = object
+  bus*: B
+  address*: byte
+
+proc ready*[B: I2cBus](sensor: static Lis3mdl[B]): bool =
+  mixin writeRead
+  ...
+```
+
+This builds for the board and passes on the host against a stand-in bus. Given something that is not a bus, the compiler says only that the procedure does not exist for that type.
 
 Edge interrupts, UART set-up and the SPI target are not behind interfaces yet. They are called on the chip's types directly.
 
@@ -400,28 +432,28 @@ State of Lutra against this table, on the ESP32-C3:
 | Tier | Verified | Not written |
 |---|---|---|
 | Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
-| Buses | SPI controller, SPI target with DMA | I2C; DMA for the SPI controller |
-| Timing and analog | | PWM, ADC, pulse capture, addressable LED |
+| Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
+| Timing and analog | Addressable LED, as far as the pulses on its pin | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
 
 ---
 
 ## 8. Libraries
 
-**Proposed** rule for placement, October 2026. The author asked for ideas and has not yet confirmed this one:
+**Decided** rule for placement, October 2026:
 
 | Lives in | What | Examples |
 |---|---|---|
 | `lutra` itself, as `lutra/<name>` | Anything written only against the `hal/` interfaces, with no specific part number in it | Everything in §8.1; framing, the signal front-end, the sampling pipeline, the AT command engine, the settings store |
-| Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lis3dh`, an SX126x LoRa driver, a driver for one cellular modem |
+| Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lsm6ds33`, an SX126x LoRa driver, a driver for one cellular modem |
 
 - Nim compiles only what a program imports, so a bundled library costs nothing in the image. What it costs is sharing Lutra's version: a breaking change in one bundled library is a breaking release of all.
-- One first-party driver should be a separate package from the start, to prove the interfaces can be used from outside this repository. The author's LIS3DHTR library is the natural one.
+- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33` and `lutra_lis3mdl`, in `lutra-lsm6ds33` and `lutra-lis3mdl` beside this repository. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them.
 - How settled a module is belongs in its documentation, not in where it lives.
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing (`fmt`), durations (`time`), a ring buffer (`containers`) and framing (`framing`).
+Written so far: printing (`fmt`), durations (`time`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`) and the audio front-end (`signal`).
 
 ### 8.1 Core
 
@@ -442,7 +474,7 @@ Tasking uses stackful tasks, not Nim's closure iterators. Closure iterators need
 | Signal front-end | Windowing, fixed-point FFT, mel features | A model needs the same preprocessing it was trained with. The code must give bit-identical results on the host and on the device |
 | Sampling pipeline | Fixed-rate capture into windows, handed to a model | The glue from sensor to Steady |
 | Data capture | Device library and a host tool that records sensor data to files | Users need data from their own sensor before they can train |
-| Starter drivers | One accelerometer, one I2S microphone, one environmental sensor, the addressable LED | They power the demos and are the template for third-party drivers. The author's existing LIS3DHTR Ratel library (`ratel-lis3dhtr`) is the natural first port |
+| Starter drivers | One accelerometer, one I2S microphone, one environmental sensor, the addressable LED | They power the demos and are the template for third-party drivers. The accelerometer is done first, as `lutra_lsm6ds33` (§11, M3) |
 
 ### 8.3 Connectivity
 
@@ -510,7 +542,7 @@ Steady stays independent of Lutra. Steady defines a minimal board contract and L
 
 **Verified** on the seed code: Steady's `kws` benchmark, with its ten `board_*` entry points implemented in Nim on top of the Ratel port, gives output checksum `ab2fdbf1`, identical to the C build. Whole-model cycles were 44.40M against 45.15M for the C build. The C figure came from an older build of Steady, so part of that difference may be changes in Steady itself. Weights were in flash at `0x3C10xxxx` and no allocator symbols were linked. The adapter was about 20 lines.
 
-**Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. Later changes to Lutra moved code about and the count is now 44.26M. The other five models have not been run.
+**Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. Later changes to Lutra moved code about and the count became 44.26M; with Steady at `a9a2f44` it is 43.49M. The other five models have not been run.
 
 Acceptance test for every board port: all six of Steady's reference models give the reference checksums, with cycle counts comparable to the C path.
 
@@ -577,28 +609,75 @@ The two boards are wired pin to pin, except UART1, which crosses: IO0 to IO1 and
 
 ### M3: First TinyML demo
 
-Next. Not started.
+Built October 2026, except for what needs the author at the bench. "What is left" below is the list.
 
 - I2C, I2S, ADC, PWM, addressable LED.
 - Fixed-point math, signal front-end, sampling pipeline, data capture.
 - Starter drivers.
 - **Exit:** keyword spotting runs end to end from microphone to LED, and the front-end is bit-identical between host and device.
 
-What the author has on hand, as of October 2026:
+**Decided:** the author has no microphone, so the exit is reshaped. Keyword spotting runs end to end from recorded speech held in flash to the LED, with the front-end bit-identical between host and device; and an I2C sensor is read through a driver in a package of its own. I2S waits for a microphone. ADC and PWM wait until something needs them.
 
-- **No microphone.** The exit above cannot be met as written. The author suggested using sample audio found online for now.
-- **An accelerometer**, believed to be a LIS3DHTR, which can be wired up. The author's Ratel library for it is at `github.com/garrettkinman/ratel-LIS3DHTR`, with a local checkout in `ratel-lis3dhtr` beside this repository.
-- **Two DevKitM-1 boards**, still wired together for M2. That wiring uses IO0, IO1, IO3, IO5, IO6, IO7 and IO10 on both. What is left free is IO4, which the self-check needs unconnected, the strapping pins IO2, IO8 and IO9, and the USB pins IO18 and IO19. An I2C sensor needs some link wires taken off, or the link pins reused.
+What the author has on hand: no microphone; Adafruit's LSM6DS33 + LIS3MDL breakout, product 4485, which is an accelerometer and gyroscope at 0x6A and a magnetometer at 0x1C; and two DevKitM-1 boards wired together for M2, which uses IO0, IO1, IO3, IO5, IO6, IO7 and IO10 on both. Of the rest, IO18 and IO19 are for the sensor board, the self-check needs IO4 unconnected, IO8 is the LED, and IO2, IO8 and IO9 are strapping pins.
 
-**Proposed** shape for M3 given that. None of this has been agreed, so settle it with the author first:
+**Verified** by `nim keywords` in `checks/`. Twelve one-second clips from the Speech Commands test set, one for each word the model knows, are held in flash. Each goes through `lutra/signal` and Steady's `kws` model, on the host and then on the board. The board recognises all twelve, and its 490 features for each clip have the same checksum as the host's. A clip takes the board 184 ms for the features and 277 ms for the model.
 
-1. **Front-end on recorded audio.** Fixed-point math and the signal front-end, fed from clips stored in flash, with the host and the device compared bit for bit. Steady's `kws` model is MLPerf Tiny's reference keyword-spotting model, `kws_ref_model.tflite` from `github.com/mlcommons/tiny` (see `tests/models/fetch.sh` in Steady). It takes 490 input values and gives 12 outputs. The front-end has to reproduce what that benchmark's training code computes from Speech Commands audio; that code has not been read yet, and neither the audio nor the benchmark's own test inputs have been fetched.
-2. **Keyword spotting on those clips**, with the result on the console and the LED. This stands in for the microphone until there is one.
-3. **I2C, and the LIS3DHTR as the first real sensor**, as the first separate driver package (§8). The sampling pipeline and data capture can be exercised with it.
-4. **The addressable LED.** Only the author can see whether it lights, so it needs them at the board.
-5. **I2S waits for a microphone.** ADC and PWM wait until something needs them.
+**Verified** on the host by `nim -d:testset keywords`: of the 4890 clips in that test set, 4483 are recognised, 91.68%. This is the evidence that the front-end computes what the model was trained on. MLPerf Tiny's quality target for this model is 90%, quoted from memory.
 
-Questions to put to the author before starting: whether this reshaped exit is acceptable, whether the library rule in §8 stands, and how I2C devices should be declared, which is the first shareable bus under §5.4.
+| Piece | State |
+|---|---|
+| Arithmetic (`lutra/fixed`) | A square root and base-2 and natural logarithms of 64-bit whole numbers. Verified on the host against floating point |
+| Front-end (`lutra/signal`) | Mel-frequency cepstral coefficients of one frame. Verified on the host against the same sums in floating point, and on the board against the host |
+| Keyword spotting on recorded clips | Verified, as above |
+| I2C controller | Verified. With nothing attached: an address nobody has is refused in 110 µs at 100 kHz, a held line is given up on, and the bus works again afterwards. With the sensor board: 2000 of 2000 addresses acknowledged, a register written and read back 500 times of 500, reads of 1, 6, 12 and 16 bytes, and the transaction after a refused one working 800 times of 800 |
+| `I2cBus` interface, `lutra_lsm6ds33` | Verified on the real chip, through the package's own example: 26.4 readings a second where 26 were asked for, and flat on a table −7, 11, 1023 thousandths of g with noise of 2 to 3. It starts cleanly 10 times of 10. The gyroscope reads a steady few degrees a second at rest, which is its usual offset; its scale has not been checked by turning it |
+| `lutra_lis3mdl` | Verified on the real chip, through the package's own example: 10.5 readings a second where 10 were asked for, starting cleanly 6 times of 6, and a steady field of about 700 thousandths of a gauss with noise of 3 to 5. One axis moved by 400 when a scope probe was clipped on nearby; nobody has tried a magnet. Run together on the one bus, the two drivers gave 80.6 fields and 99.8 accelerations a second where 80 and 104 were asked for |
+| IO18 and IO19 as ordinary pins | Verified |
+| Addressable LED | The 24 pulses are verified on the pin. Nobody has seen it lit |
+| Sampling pipeline, data capture | Not written |
+| I2S, ADC, PWM | Not written, as decided |
+
+**Decided** along the way:
+
+- How an I2C device is declared (§5.4), and the `I2cBus` interface (§6).
+- The placement rule for libraries (§8), with `lutra_lsm6ds33` and `lutra_lis3mdl` as the first separate packages. A driver for the LIS3DH was written first, on the belief that the author's sensor was one, and deleted when it turned out not to be: nothing here could have tested it. The author's Ratel library, `ratel-lis3dhtr`, is for that other part.
+- A reading is `(x, y, z)` in thousandths of the part's own unit: of g, of a degree a second, of a gauss.
+- A front-end is described once, as a constant, and its tables are worked out when the program is compiled:
+
+```nim
+const mfcc = Mfcc(sampleRate: 16000, window: 480, melBins: 40, lowHz: 20, highHz: 4000, coefficients: 10)
+mfcc.compute(samples, coefficients, fullScale = peak)
+```
+
+  It computes what `tf.signal` does with its defaults: a periodic Hann window, the magnitude of a Fourier transform zero-padded to a power of two, triangular bands evenly spaced in mel, the natural logarithm of each band plus a floor, and a cosine transform. Coefficients come back with 16 fractional bits. Cutting sound into frames and scaling coefficients to a model's input are left to the caller, since models differ in both.
+
+**Verified** findings that shaped the front-end:
+
+- **The training code scales each clip by its highest sample.** That needs no division. A band's logarithm is taken of the unscaled sum, with the floor scaled up instead, and the logarithm of the highest sample is subtracted. `fullScale` is that parameter.
+- **The window needs more than 15 bits.** Rounded to 15, under a loud tone, it added as much noise to the quiet bands as the 16-bit samples themselves carry. It is held in 31.
+- **Magnitudes have to be rounded to the nearest.** Rounded down, the bias showed in bands holding little.
+- **What is left is a noise floor.** A band is good to about a hundred-thousandth of the loudest thing in its frame. Recorded sound has more noise than that in every band. A pure tone does not, and against floating point its coefficients can be out by 0.2, a third of one step of the model's input.
+- **The model's input is 0.5847 a step from 83, rounded towards zero.** The training code does this in floating point and lets a value past the ends wrap round. `checks/keywords.nim` holds it at the ends instead. The two numbers are written there by hand, because Steady's generated code does not carry them.
+- **Binary data goes in as numbers.** The clips were first held as the strings `staticRead` gives, and going through an array of strings allocates (Appendix B).
+
+**Verified** findings that shaped the I2C driver, the first three with no device attached and the last two with the sensor board:
+
+- **A device that does not acknowledge costs nothing.** The bus sends the stop itself and reports the transaction complete, with a flag to say it was refused.
+- **The bus's own timeouts are not enough.** With the clock line held low one of them fires. With the data line held low, a second attempt hangs with nothing raised at all. So a transaction has a deadline, of 50 ms and a millisecond a byte, after which the bus's state machine is reset. It works again as soon as the line is let go.
+- **A line can be held low from the board itself**, by pointing the pin back at the GPIO output register. The self-check does that.
+- **A reset of this chip in the middle of a read leaves the sensor holding the data line low.** It is still part-way through a byte. A quarter of resets did, with a program that read without pause, and every transaction after failed. So `init` clocks the bus by hand until the line is let go, and sends a stop, before the bus takes the pins: after that, 16 starts of 16 worked, 4 of them from a held line.
+- **A refused transaction of more than an address poisons the next.** The controller has already taken the byte after the address, and sends it as the address of whatever comes next; that one fails too, and so on until the leftovers happen to run out. Resetting its FIFOs does not clear it, and nor does resetting its state machine, waiting, or both: the next read worked 0 times of 20 after each. Resetting the whole peripheral and putting its eight timing registers back does: 20 of 20, and then 800 of 800 in the driver, which now does that after any transaction that fails. Before this was found it sent stray writes to both chips on the sensor board, which is the likeliest reason the accelerometer spent an afternoon with its settings scrambled, reading 1.15 g on every axis until its power was cycled.
+
+**Verified** about the author's sensor board, Adafruit's LSM6DS33 + LIS3MDL breakout, wired VIN to 3V3, GND to ground, SDA to IO18 and SCL to IO19 on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`:
+
+- **Its header had to be soldered.** Loose in its holes, nothing answered, and a test with the pins' weak pull-downs showed why: the breakout's pull-up resistors were not reaching the pins.
+- **Its ADM pin has to be wired to ground.** Left alone, the magnetometer was at 0x1E whenever it had a measurement waiting and at 0x1C whenever it had not, in step with its own sampling: its address pin was following its data-ready pin, which is its neighbour both on the chip and on the board's four-hole row. Adafruit's design files (`github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`) give ADM a 10 kΩ resistor to ground, which on this board is evidently not doing its job. A scope across the two pins with the power off showed pickup, where a short would have shown nothing, and with the scope's ground clip left on ADM the address held still. A wire from ADM to GND holds it at 0x1C: 2000 of 2000 in every state.
+
+What is left, in the order to do it:
+
+1. **Look at the LED.** `nim flash rgb.nim` in `examples/` should step it through red, green and blue. Colours in another order mean this LED takes them in another order than green, red, blue. `nim keywords` shows blue while it works on a clip, then green.
+2. **Sampling and data capture.** Neither is written, because nothing yet says what shape they should have. For now a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints. A window of samples handed to a model wants designing against the gesture model of the demos, which does not exist.
+3. **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
 
 ### M4: Second architecture
 
@@ -633,12 +712,16 @@ Three use models Steady already runs on the C3.
 - Which SVD generator to use, and whether generated register files are checked in. The C3 has about sixty hand-written addresses now, and each new peripheral adds several.
 - How the heap opt-in is expressed.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
-- How a shared bus and its devices are declared, starting with I2C.
+- What a sampling pipeline and data capture look like (§11, M3).
 
 **Known gaps, none blocking:**
 
 - Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
-- There are no deadlines or timeouts, so every wait is forever. A link that loses a packet hangs; the checks rely on the host's timeout. The wait hook of §5.5 is not there either.
+- Nothing in the self-check covers the transaction after a refused one, because that takes a device to refuse and a device to answer. It was checked by hand against the sensor board.
+- There are no deadlines or timeouts, so every wait is forever. A link that loses a packet hangs; the checks rely on the host's timeout. The wait hook of §5.5 is not there either. The one exception is an I2C transaction, which has a deadline of its own.
+- An I2C transaction carries at most 254 bytes out and 256 in, and a longer one is refused.
+- The front-end takes 3.8 ms a frame, a fifth of the time the sound takes to arrive. A transform that used its input being real, and band sums that skipped their zero weights, would cut that. Neither has been needed.
+- The addressable LED driver lights one LED. A strip needs the pulse generator's memory refilled as it plays.
 - The SPI controller copies through the bus's 64-byte buffer a byte at a time, which measured about 29% slower than the clock allows on a 300-byte transfer. Copying by words is the cheap fix. DMA is the full one, though it would not replace the copying path if, as believed and not tested, DMA cannot read from flash.
 - The trap vector is in flash (§5.5).
 - The tasks run on Linux only, and a board cannot be chosen by MAC address (§4.3).
@@ -732,7 +815,19 @@ Added for M2, on hardware unless marked:
 | SPI2 as a target | `+0xE0` bit 26 selects target mode and bit 27 resets it. Arm a transfer by resetting the DMA channel and the bus's FIFOs, starting both descriptors, clearing bit 12 of `+0x38`, then bits 23 and 24 of `+0x00` as for a controller. Bit 12 of `+0x3C` is set when chip-select rises, and `+0xE4` bits 17:0 hold the bits clocked. A receive descriptor's size need not be a multiple of four, and nothing is written past it |
 | Pin drive and filter | In a pin's IO MUX register, bits 11:10 set the drive strength (0 weakest, 2 at reset) and bit 15 enables a filter that ignores pulses shorter than about 25 ns |
 
-Not verified: the reset-default function of each pin, and anything about I2C. Take these from the ESP32-C3 Technical Reference Manual.
+Added for M3, on hardware unless marked:
+
+| Peripheral | Facts |
+|---|---|
+| IO18 and IO19 | At reset they are the pads of the chip's own USB port. IO19 is held high and neither can be driven low until bits 14 (pad enable) and 9 (pull-up) of `0x6004_3018` are cleared. After that they behave as any other pin, with function 1 as GPIO |
+| Open drain | Bit 2 of a pin's `0x6000_4074 + 4n` makes it only ever pull low. Set for both I2C pins, which share their lines with a sensor without trouble |
+| I2C0 | Base `0x6001_3000`, signals 53 (SCL) and 54 (SDA) in both directions. Its clock is off at reset: set bit 7 of `0x600C_0010`. It is timed from the 40 MHz crystal with no register written. With *h* = 20 MHz / rate: `+0x00` = *h* − 1, `+0x38` = (*h* − *h*/8) with *h*/8 in bits 15:9, `+0x30` = *h*/4, `+0x34` = *h*/2, `+0x40` = *h* − 1, and `+0x44`, `+0x48`, `+0x4C` = *h*. These are esp-idf's sums; at 100 kHz a refused address took 110 µs, which is the right length. `+0x04` bit 4 makes it the controller and bit 8 turns its clock on |
+| I2C0, a transaction | Up to eight commands at `+0x58 + 4n`: operation in bits 13:11 (6 start, 1 write, 3 read, 2 stop), a byte count in 7:0, bit 8 to expect an acknowledgement of a write, bit 10 to leave a read unacknowledged. Bytes to send, each address included, go to `+0x1C`, which also gives the bytes read. The counts waiting are in `+0x08`, bits 23:18 out and 13:8 in, of 32 each way. Pulse bits 13:12 of `+0x18` to empty both, write ones to `+0x24` to clear events, then set bit 11 and bit 5 of `+0x04`. In `+0x20`, bit 7 is "complete" and bit 10 "not acknowledged". Bit 10 of `+0x04` resets the state machine, which is not enough after a refusal (§11, M3): bit 7 of `0x600C_0018`, set and cleared, resets the whole peripheral, timing registers included |
+| I2C0, a held line | With SCL low: bit 13 of `+0x20` within a few milliseconds, and never bit 7. With SDA low: bits 5, 13 and 14 the first time, and nothing at all the second |
+| Pulse generator (RMT) | Base `0x6001_6000`, channel 0 out is signal 51. Its clock is off at reset: set bit 9 of `0x600C_0010`. `+0x68` = bits 31, 26, 24 and 0: on, from the 80 MHz clock undivided, with its memory written directly. `+0x10` for channel 0: bit 16 for one block of memory, a divider of 1 in bits 15:8, bit 6 to hold the pin low when idle. The channel's 48 words are at `+0x400`; a word is a time in ticks in bits 14:0 and a level in bit 15, then the same again in 30:16 and 31, and a zero word ends the list. Pulse bits 2:1 of `+0x10` to rewind, set bit 24 and then bit 0 to play, and bit 0 of `+0x38` says it is done; clear it at `+0x44` |
+| The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin. Whether the LED agrees has not been seen |
+
+Not verified: the reset-default function of each pin. Take it from the ESP32-C3 Technical Reference Manual.
 
 ### A.5 Building and flashing
 
@@ -800,6 +895,10 @@ proc start() {.exportc: "_start",
 - **Nim does not link again when only a linker script's contents change.** It compares the link command, not the files it names.
 - **A generic procedure binds a name early if `system` already has one symbol by that name.** `link.send(c)` resolved to the channel `send` on the host, and `reset(port)` to `system.reset`. Declare such names with `mixin`. A library written against a concept needs this too, for `send` and `receive`, or it only compiles for the target.
 - **A template parameter is substituted into field accesses.** With a parameter called `name`, `file.name` in the body becomes `file."the argument"`.
+- **A `static` object parameter cannot size the return type.** `func table(m: static Mfcc): array[m.melBins, int32]` fails with "cannot evaluate at compile time: m". Pass the size as a `static int` of its own.
+- **Going through a constant array of strings allocates.** Each string is copied on its way to the loop variable, and the program then fails to link, for want of `end`. Hold data from `staticRead` as an array of numbers, built in a `const` block.
+- **`--skipProjCfg` builds for the host from a folder whose `config.nims` selects a board.** `nim keywords` uses it to build one source file both ways. That file tells them apart with `when defined(lutraBoard)`.
+- **A module cannot import another of its own name**, wherever the other is. `checks/keywords.nim` is not `kws.nim` because Steady's generated module is.
 
 ---
 
@@ -824,6 +923,9 @@ timeout 5 cat /dev/ttyUSB0
 - `esptool` leaves the port set to return from a read at once when no byte is waiting, which `cat` takes as the end of the file. That is why a capture started before `esptool` runs goes silent after the reset. Lutra's `monitor` and `selfcheck` open the port once, hold it open across the reset and set the mode again afterwards, so they read from the boot ROM's first byte.
 - Lutra's tasks find the compiler under `~/.espressif` without help. `esptool` has to be on `PATH` or named in `ESPTOOL`.
 - Steady's reference results for the C board path are in `~/Documents/GitHub/Steady/build/mcu/esp32c3/<model>/serial.txt`.
+- `~/Documents/GitHub/lutra-lsm6ds33` and `~/Documents/GitHub/lutra-lis3mdl` are the sensor drivers' packages: local git repositories with nothing committed and no remote.
+- The Speech Commands test set is unpacked in `checks/build/keywords/`, 150 MB, so `nim keywords` does not download it again. Deleting `checks/build` brings the download back.
+- The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3). The other DevKitM-1 was unplugged on 13 October.
 
 ---
 

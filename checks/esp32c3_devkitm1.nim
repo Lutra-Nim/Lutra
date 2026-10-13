@@ -1,7 +1,9 @@
 ## Hardware self-check for the ESP32-C3-DevKitM-1. Run it with `nim selfcheck`,
-## with nothing wired to IO4.
+## with nothing wired to IO4. IO18 and IO19 may have an I2C device on them or
+## nothing.
 
 import lutra
+import lutra/chips/esp32c3/[registers, gpio]
 
 const
   table = block:
@@ -93,6 +95,49 @@ block:
 
 const expected = checksum(table)
 check "constants", checksum(table) == expected
+
+# An I2C bus needs nobody on it to show that an address no device may have is
+# refused, at once, and that a clock line held low is given up on
+block:
+  proc refusal(): uint64 =
+    ## How long the bus took to find nobody there, or 0 if somebody was
+    let start = micros()
+    if not i2c0.write(0x7F, []): result = micros() - start
+
+  i2c0.init(sda = IO18, scl = IO19)
+  check "i2c refusal", refusal() in 1'u64..1000'u64
+  IO19.low()
+  IO19.routeOut(0x80) # Held low from here, as a wedged device would
+  check "i2c held line", refusal() in 10_000'u64..100_000'u64
+  IO19.routeOut(53) # The bus's clock again
+  check "i2c recovery", refusal() in 1'u64..1000'u64
+
+# The LED's 24 pulses are played a second time and read back from its pin,
+# after once more to bring this loop into the cache
+block:
+  rgbLed.color(red = 0xA5, green = 0x0F, blue = 0x81)
+  var
+    edges: array[48, uint32]
+    count: int
+  for attempt in 1..2:
+    pulseChannel[] = pulseChannel[] or (3 shl 1)
+    pulseChannel[] = pulseChannel[] and not (3'u32 shl 1)
+    pulseChannel[] = pulseChannel[] or (1 shl 24)
+    var level = false
+    count = 0
+    let start = cycles()
+    pulseChannel[] = pulseChannel[] or 1
+    while count < edges.len and cycles() - start < cpuHz div 10_000:
+      if rgbLed.pin.read() != level:
+        edges[count] = cycles()
+        level = not level
+        inc count
+    delay 1.ms
+  var bits = 0'u32
+  for bit in 0..<count div 2: # High for longer than half a microsecond is a 1
+    bits = (bits shl 1) or (if edges[2 * bit + 1] - edges[2 * bit] > cpuHz div 2_000_000: 1 else: 0)
+  check "led pulses", count == edges.len and bits == 0x0FA581 # Green goes first
+  rgbLed.off()
 
 # Long enough for any watchdog left running to bite, which would start again
 # from the top
