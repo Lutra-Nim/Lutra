@@ -61,10 +61,15 @@ SECTIONS
     *(.sdata .sdata.*)
   } > ram
 
+  /* Tasks' stacks go above every other variable, so that one which overflows
+     runs into those or into another task's stack, never off the end of RAM
+     or into the scheduler's own, above, which it needs to report it */
   .bss (NOLOAD) :
   {
     _bss_start = .;
     *(.sbss .sbss.* .bss .bss.* COMMON)
+    *(.stacks)
+    *(.tasks)
     _bss_end = .;
   } > ram
 

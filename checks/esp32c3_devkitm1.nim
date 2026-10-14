@@ -52,12 +52,16 @@ block:
   check "millis", uint32(millis() - start), 250
 
 proc checkPin(pin: static Pin) =
+  # A pin's level reaches `read` a few cycles after it changes
   pin.output()
   pin.high()
+  delay 1.us
   let readHigh = pin.read()
   pin.low()
+  delay 1.us
   let readLow = pin.read()
   pin.toggle()
+  delay 1.us
   check "gpio output", readHigh and not readLow and pin.read()
 
   pin.input()
@@ -74,10 +78,14 @@ checkPin(IO4)
 # The pin interrupts itself. Inside a critical section the handler has to wait,
 # and it has to run on the way out.
 var edges {.volatile.}: uint32
+
+proc count() {.interrupt: IO4.rising.} =
+  inc edges
+  idle() # Which has to do nothing here, as is checked with tasks below
+
 IO4.output()
 IO4.low()
-IO4.onRising:
-  inc edges
+start count
 
 block:
   var kept = true
@@ -138,6 +146,102 @@ block:
     bits = (bits shl 1) or (if edges[2 * bit + 1] - edges[2 * bit] > cpuHz div 2_000_000: 1 else: 0)
   check "led pulses", count == edges.len and bits == 0x0FA581 # Green goes first
   rgbLed.off()
+
+# Tasks take turns in the order they were started, each until it waits, and
+# one that ends leaves the line
+var
+  order: array[9, char]
+  noted: int
+
+proc note(c: char) =
+  order[noted] = c
+  inc noted
+
+proc first() {.task.} =
+  for _ in 1..3:
+    note 'a'
+    idle()
+
+proc second() {.task.} =
+  for _ in 1..2:
+    note 'b'
+    idle()
+
+start first
+start second
+
+for _ in 1..4:
+  note 'p'
+  idle()
+check "tasks", order == ['p', 'a', 'b', 'p', 'a', 'b', 'p', 'a', 'p']
+
+var
+  turns {.volatile.}: uint32
+  ticks: uint32
+  raised: bool
+
+proc spinner() {.task.} =
+  while true:
+    inc turns
+    idle()
+
+proc ticker() {.task.} =
+  while true:
+    delay 10.ms
+    inc ticks
+
+proc raiser() {.task.} =
+  delay 20.ms
+  raised = true
+
+start spinner
+start ticker
+start raiser
+
+block:
+  let start = ticks
+  delay 100.ms
+  check "tasks delay", ticks - start in 9'u32..10'u32
+
+block:
+  let met = wait(raised, within = 100.ms)
+  let start = millis()
+  let missed = not wait(false, within = 10.ms)
+  check "tasks wait", met and missed and millis() - start in 10'u64..11'u64
+
+# The handler waits, and must not hand over from inside the interrupt. The
+# program spins rather than waits for it, so that only the handler could.
+block:
+  let (before, edgesBefore) = (turns, edges)
+  IO4.high()
+  IO4.low()
+  while edges == edgesBefore: discard
+  check "tasks in handler", turns == before
+
+# A timer event comes as often as asked, and so does a turn of `every`, which
+# skips the turns it would start late
+var ticked {.volatile.}: uint32
+
+proc tick() {.interrupt: every(1.ms).} =
+  inc ticked
+
+block:
+  start tick
+  let before = ticked
+  delay 100.ms
+  check "timer", ticked - before, 100
+
+block:
+  var
+    turns: array[4, uint64]
+    taken = 0
+  let began = millis()
+  for turn in every(10.ms):
+    if taken == 1: delay 25.ms # Too late for turns 2 and 3
+    turns[taken] = turn
+    inc taken
+    if taken == turns.len: break
+  check "every", turns == [0'u64, 1, 4, 5] and millis() - began in 50'u64..51'u64
 
 # Long enough for any watchdog left running to bite, which would start again
 # from the top

@@ -4,7 +4,9 @@
 ## interrupts keeps whatever handler the chip's vendor left. The chip decides
 ## what an interrupt means, in `lutraInterrupt`.
 
-var vendorVector {.exportc: "lutraVendorVector".}: uint32
+var
+  vendorVector {.exportc: "lutraVendorVector".}: uint32
+  handling {.exportc: "lutraHandling".}: uint32 # Set while an interrupt is handled
 
 # An interrupt saves every register on the stack it arrived on, and resumes
 # from whichever stack `lutraInterrupt` returns: that is what a scheduler needs
@@ -62,9 +64,12 @@ proc vector() {.exportc: "lutraTrapVector", codegenDecl: "__attribute__((naked, 
     sw t0, 112(sp)
     csrr t0, mstatus
     sw t0, 116(sp)
+    li t0, 1
+    sw t0, lutraHandling, t1
     mv a0, sp
     csrr a1, mcause
     call lutraInterrupt
+    sw zero, lutraHandling, t0
     mv sp, a0
     lw t0, 112(sp)
     csrw mepc, t0
@@ -111,6 +116,8 @@ proc takeTraps*(): bool =
 
 proc enableInterrupts*() =
   {.emit: "__asm__ volatile(\"csrsi mstatus, 8\");".}
+
+proc inHandler(): bool {.exportc: "lutraInHandler".} = handling != 0
 
 proc disableInterrupts*(): bool =
   ## True if they were on

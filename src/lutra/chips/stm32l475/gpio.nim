@@ -55,7 +55,16 @@ template pullUp*(pin: static Gpio) = pin.field(gpioPull, 2, 1)
 template pullDown*(pin: static Gpio) = pin.field(gpioPull, 2, 2)
 template noPull*(pin: static Gpio) = pin.field(gpioPull, 2, 0)
 
-type Edge = enum rising, falling, either
+type
+  Edge* = enum risingEdge, fallingEdge, eitherEdge
+  PinEvent* = object
+    ## An edge on a pin, which an `{.interrupt.}` proc can be bound to
+    pin*: Gpio
+    edge*: Edge
+
+func rising*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: risingEdge)
+func falling*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: fallingEdge)
+func changing*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: eitherEdge)
 
 # Pin n of every port shares one line to the interrupt controller, so only one
 # of them can have a handler. Lines 0 to 4 have an interrupt each, 5 to 9 share
@@ -76,26 +85,31 @@ proc pinInterrupt*(lines: Slice[int]) =
       pinInterrupts[] = 1'u32 shl line # Writing a 1 clears it
       pinHandlers[line]()
 
-template onEdge(pin: static Gpio, edge: Edge, body: untyped) =
-  once("Handling the interrupt that pin " & $pin.num & " of every port shares", at(instantiationInfo(-2)))
-  const
-    lines = (if pin.num < 5: pin.num..pin.num elif pin.num < 10: 5..9 else: 10..15)
-    interrupt = (if pin.num < 5: 6 + pin.num elif pin.num < 10: 23 else: 40)
-  proc handler() {.gensym, exportc: "lutra_pin_" & $pin.num, cdecl.} = body
+func lines(pin: Gpio): Slice[int] =
+  ## The pins whose interrupt `pin` shares
+  if pin.num < 5: pin.num..pin.num elif pin.num < 10: 5..9 else: 10..15
+
+func sharedInterrupt(pin: Gpio): int = (if pin.num < 5: 6 + pin.num elif pin.num < 10: 23 else: 40)
+
+template attach*(event: static PinEvent, where: static string, handler: untyped) =
+  ## Binds `handler` to `event`, for `arm` to switch on. `where` is the
+  ## handler's line, for the message when a line has two.
+  once("Handling the interrupt that pin " & $event.pin.num & " of every port shares", where)
+  proc entry() {.gensym, exportc: "lutra_pin_" & $event.pin.num, cdecl.} = handler()
+  discard cast[pointer](entry) # Inside a procedure, Nim leaves out one nothing refers to
+  const lines = event.pin.lines
   when first("The interrupt of pins " & $lines):
-    proc shared() {.gensym, exportc: "lutra_interrupt_" & $interrupt, cdecl.} = pinInterrupt(lines)
+    proc shared() {.gensym, exportc: "lutra_interrupt_" & $event.pin.sharedInterrupt, cdecl.} =
+      pinInterrupt(lines)
+    discard cast[pointer](shared)
+
+template arm*(event: static PinEvent, where: static string) =
+  const pin = event.pin
   switchOn(apb2Clocks, 0) # Of the register that picks the port
   let source = Reg(pinInterruptPorts + 4 * uint32(pin.num div 4))
   source[] = source[] and not (0xf'u32 shl (4 * (pin.num mod 4))) or
     (uint32(ord(pin.port) - ord('A')) shl (4 * (pin.num mod 4)))
-  if edge != falling: pinRisingEdges[] = pinRisingEdges[] or pin.mask
-  if edge != rising: pinFallingEdges[] = pinFallingEdges[] or pin.mask
+  if event.edge != fallingEdge: pinRisingEdges[] = pinRisingEdges[] or pin.mask
+  if event.edge != risingEdge: pinFallingEdges[] = pinFallingEdges[] or pin.mask
   pinInterruptEnable[] = pinInterruptEnable[] or pin.mask
-  enable(interrupt)
-
-template onRising*(pin: static Gpio, body: untyped) =
-  ## Runs `body` as an interrupt, from here on, whenever the pin goes high
-  onEdge(pin, rising, body)
-
-template onFalling*(pin: static Gpio, body: untyped) = onEdge(pin, falling, body)
-template onChange*(pin: static Gpio, body: untyped) = onEdge(pin, either, body)
+  enable(pin.sharedInterrupt)

@@ -81,7 +81,12 @@ const
   timerWatchdog* = Reg 0x6001_F048
   timerWatchdogProtect* = Reg 0x6001_F064
 
+  systemTimerConfig* = Reg 0x6002_3000
   systemTimerOp* = Reg 0x6002_3004
+  systemTimerAlarm* = 0x6002_3034'u32 # Three: a period, and whether to repeat
+  systemTimerAlarmLoad* = 0x6002_3050'u32 # Three
+  systemTimerInterruptEnable* = Reg 0x6002_3064
+  systemTimerInterruptClear* = Reg 0x6002_306C
   systemTimerHigh* = Reg 0x6002_3040
   systemTimerLow* = Reg 0x6002_3044
 

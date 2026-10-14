@@ -10,5 +10,11 @@ constants ok
 i2c refusal ok
 i2c held line ok
 i2c recovery ok
+tasks ok
+tasks delay ok
+tasks wait ok
+tasks in handler ok
+timer ok
+every ok
 idle ok
 Fault: undefined instruction at 0x08

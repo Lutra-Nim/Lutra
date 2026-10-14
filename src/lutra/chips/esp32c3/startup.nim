@@ -1,4 +1,5 @@
 import ../../arch/riscv32/start
+import ../../tasks
 import registers
 
 {.used.}
@@ -18,7 +19,7 @@ var bss {.importc: "_bss_start".}, bssEnd {.importc: "_bss_end".}, flashPages {.
 proc main() {.exportc: "lutraMain", noinline.} =
   zeroMem(addr bss, cast[uint](addr bssEnd) - cast[uint](addr bss))
   nimMain()
-  while true: discard
+  while true: idle() # The program has ended, and any tasks go on
 
 # The boot ROM loads this into RAM and runs it with flash still unreadable, so
 # it can call or read nothing in flash but `main`, last. The build checks that.

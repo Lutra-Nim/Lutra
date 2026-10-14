@@ -43,8 +43,12 @@ template reportFaults*(sink: static ByteSink) =
   ## From here on, a fault is reported to `sink`
   proc handler(frame: ptr array[8, uint32]) {.exportc: "lutraFaultReport", cdecl.} = report(sink, frame)
 
+  # The report is given a stack of its own, the top of the program's, in case
+  # the fault was running out of stack
   proc entry() {.exportc: "lutraFault", codegenDecl: "__attribute__((naked)) $# $#$#".} =
     asm """
       mrs r0, msp
+      ldr r1, =_stack_top
+      mov sp, r1
       b lutraFaultReport
     """

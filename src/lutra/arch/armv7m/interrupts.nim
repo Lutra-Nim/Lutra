@@ -17,6 +17,11 @@ proc disableInterrupts*(): bool =
   {.emit: ["__asm__ volatile(\"mrs %0, primask\\n cpsid i\" : \"=r\"(", masked, "));"].}
   masked == 0
 
+proc inHandler(): bool {.exportc: "lutraInHandler".} =
+  var exception: uint32 # The one being handled, or 0
+  {.emit: ["__asm__ volatile(\"mrs %0, ipsr\" : \"=r\"(", exception, "));"].}
+  exception != 0
+
 template critical*(body: untyped) =
   ## Runs `body` with interrupts off, and leaves them as they were
   let wereOn = disableInterrupts()

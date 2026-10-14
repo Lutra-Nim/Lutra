@@ -1,3 +1,4 @@
+import ../../tasks
 import registers, peripherals, gpio, clock
 
 template control(uart: Uart): Reg = Reg(uart.base + uartControl)
@@ -31,5 +32,5 @@ proc send*(uart: static Uart, c: char) =
 proc poll*(uart: static Uart): bool = (uart.status[] and received) != 0
 
 proc receive*(uart: static Uart): char =
-  while not uart.poll: discard
+  wait uart.poll
   char(Reg(uart.base + uartReceived)[] and 0xff)

@@ -3,9 +3,9 @@
 
 Lutra is a hardware abstraction layer and library ecosystem in pure Nim, RISC-V first. It is a spiritual successor to [Ratel](https://github.com/PMunch/ratel) and the board layer underneath [Steady](https://github.com/garrettkinman/Steady).
 
-The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, a cycle counter and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
+The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, timer events, a cycle counter, tasks that take turns, records for capturing data on the host, and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
 
-ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, a console, I2C, time, a cycle counter and a report of faults. The same self-check, sensor driver and benchmark run on it.
+ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, a console, I2C, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it.
 
 ## A first program
 
@@ -34,14 +34,43 @@ nim monitor
 | `nim build hello.nim` | Compile, link and check the image. `nim c hello.nim` skips the checks |
 | `nim flash hello.nim` | Build, and write to the board |
 | `nim monitor` | Read the board's console. `nim -d:reset monitor` resets it first |
+| `nim capture > data.csv` | Reset the board, and write its records as CSV |
 | `nim size hello.nim` | Build, and show what each memory region holds |
 | `nim selfcheck` | Run the board's hardware self-check and compare its output |
 
-An interrupt handler is a block, bound at compile time:
+An interrupt handler is a proc that says what calls it, bound at compile time and switched on by `start`:
 
 ```nim
-bootButton.onFalling:
+proc pressed() {.interrupt: bootButton.falling.} =
   led.toggle()
+
+start pressed
+```
+
+A task is a proc too, started the same way. Tasks take turns with the program, each running until it waits:
+
+```nim
+proc blink() {.task.} =
+  while true:
+    led2.toggle()
+    delay 250.ms   # The program and the other tasks run meanwhile
+
+start blink
+
+if not wait(sensor.ready, within = 100.ms):
+  print "No sensor\n"
+```
+
+Something done at a steady rate is a loop in a task, or a timer's interrupt:
+
+```nim
+for turn in every(10.ms):       # Waits for each turn, letting other tasks run
+  console.record(turn, x, y, z) # For `nim capture > data.csv`
+
+proc tick() {.interrupt: every(1.ms).} =
+  inc ticks
+
+start tick
 ```
 
 Wiring mistakes stop the build. Using one pin for two things, here the console's transmit pin as an output, gives:
@@ -59,7 +88,7 @@ Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks use 
 | `esp32c3_devkitm1` | Espressif's `riscv32-esp-elf` toolchain, on the `PATH` or where Espressif's installer puts it under `~/.espressif` | `esptool` 5, on the `PATH` or named in `ESPTOOL` |
 | `b_l475e_iot01a` | `arm-none-eabi-gcc` with its `newlib`, on the `PATH` | `pyocd`, on the `PATH` or named in `PYOCD` |
 
-[examples/](examples) has a folder for each board, and its programs are run from there. On the DevKitM-1, `nim flash rgb.nim` and `nim flash button.nim` need nothing wired; on the B-L475E-IOT01A, nor do `nim flash blink.nim` and `nim flash button.nim`.
+[examples/](examples) has a folder for each board, and its programs are run from there. On the DevKitM-1, `nim flash rgb.nim`, `nim flash button.nim`, `nim flash tasks.nim` and `nim flash record.nim` need nothing wired; on the B-L475E-IOT01A, nor do `nim flash blink.nim`, `nim flash button.nim`, `nim flash tasks.nim` and `nim flash record.nim`.
 
 The programs in [checks/](checks) are run from that folder and are set up for the DevKitM-1. `-d:board=b_l475e_iot01a` before a command builds for the other board.
 
@@ -71,7 +100,7 @@ Run from `checks/`. With two boards of one kind attached, those for one board ne
 
 | Command | Does |
 |---|---|
-| `nim selfcheck` | The board's own hardware: clock, time, pins, interrupts, flash, I2C, the LED's signal, the fault report |
+| `nim selfcheck` | The board's own hardware: clock, time, pins, interrupts, flash, I2C, the LED's signal, tasks, timers, the fault report |
 | `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository |
 | `nim sensors` | Reads an LSM6DS33 and a LIS3MDL on IO18 and IO19 through their driver packages, checked out beside this repository. On the B-L475E-IOT01A, the LIS3MDL the board carries |
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
@@ -85,12 +114,12 @@ The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
 
 | Path | Holds |
 |---|---|
-| `src/lutra/arch/` | What depends only on the instruction set: trap entry, context switch, startup |
+| `src/lutra/arch/` | What depends only on the instruction set: trap entry, switching stacks, startup |
 | `src/lutra/chips/` | What depends on the silicon: registers, clocks, memory map, peripherals |
 | `src/lutra/boards/` | What depends on the circuit board: pin names, wiring, flash size |
 | `src/lutra/hal/` | The interfaces libraries are written against |
-| `src/lutra/*.nim` | Libraries: printing, time, containers, framing, arithmetic in whole numbers, audio features |
-| `src/lutra/project.nim` | The host side: board selection and the tasks above |
+| `src/lutra/*.nim` | Libraries: printing, time, tasks, records, containers, framing, arithmetic in whole numbers, audio features |
+| `src/lutra/project.nim` | The host side: board selection and the tasks above. `capture.nim` is the decoder `nim capture` builds |
 | `tools/` | Empty so far; for the register generator |
 | `checks/` | Hardware checks, for one board and for two wired together |
 | `examples/` | Example programs, in a folder for each board |

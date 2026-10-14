@@ -1,6 +1,6 @@
 import std/[macros, macrocache]
-import ../../[claims, containers]
-import registers, peripherals, interrupts, gpio
+import ../../[claims, containers, tasks]
+import registers, peripherals, interrupts, gpio, clock
 
 template fifo(uart: Uart): Reg = Reg(uart.base + uartFifo)
 template interruptEnable(uart: Uart): Reg = Reg(uart.base + uartInterruptEnable)
@@ -13,6 +13,12 @@ template clockConfig(uart: Uart): Reg = Reg(uart.base + uartClockConfig)
 template waiting(uart: Uart): uint32 = uart.status[] and 0x3ff # In the receive FIFO
 
 proc setBaud*(uart: static Uart, baud: uint32) =
+  # What was sent at the old rate goes first, the last byte included, which
+  # leaves the FIFO a byte's time before it is out on the line
+  while (uart.status[] shr 16 and 0x3ff) > 0: discard
+  let byteTime = 10 * (uart.clockDivider[] and 0xfff) div 40 + 1 # In microseconds
+  let began = micros()
+  while micros() - began < byteTime: discard
   # Ports are clocked from the 40 MHz crystal, so the core's clock does not
   # come into it. The divider has four fractional bits.
   let divider = 40_000_000'u32 * 16 div baud
@@ -62,7 +68,7 @@ proc poll*(uart: static Uart): bool =
 
 proc receive*(uart: static Uart): char =
   const size = bufferSize(uart)
-  while not uart.poll: discard
+  wait uart.poll
   when size > 0: uart.ring(size)[].pop
   else: char(uart.fifo[] and 0xff)
 
