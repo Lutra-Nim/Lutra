@@ -106,7 +106,7 @@ proc pinInterrupt() {.exportc: "lutra_interrupt_" & $gpioSource.line, cdecl.} =
 
 template onEdge(pin: static Gpio, edge: Edge, body: untyped) =
   once("Handling the interrupt of IO" & $pin.num, at(instantiationInfo(-2)))
-  proc handler() {.exportc: "lutra_gpio_" & $pin.num, cdecl.} = body
+  proc handler() {.gensym, exportc: "lutra_gpio_" & $pin.num, cdecl.} = body
   Reg(gpioPin + 4 * pin.num.uint32)[] = (edge.uint32 shl 7) or (1 shl 13)
   enable(gpioSource)
 

@@ -18,6 +18,11 @@ macro once*(what: static string, where: static string) =
     error what & " twice," & claims[what].strVal & " and" & where
   claims[what] = newLit(where)
 
+macro first*(what: static string): bool =
+  ## Whether this is the first time the program has come to something
+  result = newLit(what notin claims)
+  if what notin claims: claims[what] = newLit("")
+
 macro claim*(resource, role: static string, where: static string = "") =
   ## `where` is the line of the user's code that made the claim, when known
   if resource notin claims:

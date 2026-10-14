@@ -1,0 +1,14 @@
+BEGIN selfcheck
+clock ok
+delay ok
+millis ok
+gpio output ok
+gpio pull-up ok
+gpio pull-down ok
+interrupts ok
+constants ok
+i2c refusal ok
+i2c held line ok
+i2c recovery ok
+idle ok
+Fault: undefined instruction at 0x08

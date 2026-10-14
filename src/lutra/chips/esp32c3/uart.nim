@@ -77,7 +77,7 @@ template buffer*(uart: static Uart, size: static int) =
   ## lasts. Bytes that arrive with the buffer full are dropped.
   setBufferSize(uart, size)
 
-  proc handler() {.exportc: "lutra_interrupt_" & $uartSources[uart.num].line, cdecl.} =
+  proc handler() {.gensym, exportc: "lutra_interrupt_" & $uartSources[uart.num].line, cdecl.} =
     uart.interruptClear[] = fifoFull or fifoTimeout
     while uart.waiting > 0:
       discard uart.ring(size)[].push(char(uart.fifo[] and 0xff))

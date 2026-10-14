@@ -2,13 +2,13 @@
 
 **A hardware abstraction layer and library ecosystem in pure Nim, RISC-V first, built so that running a model on a microcontroller is as approachable as blinking an LED on an Arduino.**
 
-Status: design doc · v0.3 · October 2026 · milestones M0 to M2 are built, and M3 but for sampling and data capture
+Status: design doc · v0.3 · October 2026 · milestones M0 to M4 are built
 
 How to read the status of what follows:
 
 - **Decided** means the author has settled it.
 - **Proposed** means it is the current plan and has not been built or tested.
-- **Verified** means it was observed on real hardware, during the ESP32-C3 port described in Appendix A or by one of Lutra's own checks.
+- **Verified** means it was observed on real hardware, during the ESP32-C3 port described in Appendix A, the STM32L475 port described in Appendix D, or by one of Lutra's own checks.
 
 Someone picking the work up should read §1.2 first.
 
@@ -41,9 +41,9 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-One board is supported, the ESP32-C3-DevKitM-1. Milestones M0, M1 and M2 of §11 are done. M3 is built and meets its reshaped exit, with two things over: the author has not yet said what colours the LED shows, and sampling and data capture are not written. §11 says what each milestone verified, and its M3 entry ends with what is left.
+Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it and no more; §7 sets the two side by side. Sampling and data capture were moved to M5, where the gesture demo will say what shape they should have.
 
-Where to pick up: ask the author about the LED, then settle with them whether sampling and data capture are designed now or M3 is closed without them and M4 begins. Neither has been discussed beyond what §11 records. All of M3 is on the branch `feature/m3-tinyml-demo`, which has not been merged into `main`.
+Where to pick up: M5. Ask the author what comes first in it, and whether to merge M4 into `main` first. M4 is on the branch `feature/m4-cortex-m`. `main` has M3 on the author's machine, and on GitHub still ends at M2.
 
 What exists, all exercised on hardware:
 
@@ -54,13 +54,15 @@ What exists, all exercised on hardware:
 | UART | Both ports, polled or received through an interrupt into a ring buffer, on any pins |
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
 | I2C | Controller, on any pins. Reads and writes verified against a real sensor |
-| LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin; nobody has yet seen it lit |
+| LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
 | Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
 
-How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`.
+On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1, I2C, time, the cycle counter, `critical:` sections and a fault report of Lutra's own (§5.5). `hello.nim` is the same program in both boards' folders of `examples/`.
+
+How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards of one kind attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`. The checks run on the DevKitM-1 unless `-d:board=b_l475e_iot01a` comes before the command.
 
 | Run | From | Proves |
 |---|---|---|
@@ -71,14 +73,19 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 | `nim wiring`, then `nim link` | `checks/` | Two wired boards exchange 200 buffers over UART1 and 200 over SPI |
 | `nim keywords` | `checks/` | Twelve recorded words are recognised on the board, from features that match the host's bit for bit. The first run downloads 112 MB of recordings |
 | `nim sensors` | `checks/` | With the sensor board on IO18 and IO19, lying still: both chips answer through their drivers at the rates asked for, gravity is 1 g, and a refused transaction does not spoil the next |
+| `nim -d:board=b_l475e_iot01a selfcheck` | `checks/` | The other board: its clock against its crystal, time, pins, interrupts, flash, I2C, no watchdog, the fault report. Takes 45 s |
+| `nim -d:board=b_l475e_iot01a sensors` | `checks/` | That board's own LIS3MDL answers through the same driver, at the rate asked for, and a refused transaction does not spoil the next |
+| `nim -d:board=b_l475e_iot01a steady` | `checks/` | Steady's `kws` gives `ab2fdbf1` there too |
 | `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 
 Conventions the code follows:
 
 - **A chip is a folder of small modules.** `registers.nim` holds every address. `peripherals.nim` holds the types and instances and has to stay pure Nim, because `config.nims` imports it too. `host.nim` is the NimScript side: compiler flags, linker script, flashing, the link audit. `memory.nim` is shared by both sides.
+- **A chip's `host.nim` provides `configure`, `audit`, `size`, `flash`, `checkFlasher` and `resetCommand`**, and a board provides `memory`, `console` and `consolePorts`. That is all `lutra/project` asks of them.
+- **What a board must do before a program starts goes in a procedure the chip's startup calls**, `lutraBoardStart` on the STM32L475, and not at the top level of the board's module (Appendix B).
 - **Interfaces own the good names.** `Pin`, `ByteLink` and `SpiDevice` are concepts in `hal/`, so the chip's own types are called something else (`Gpio`, `SpiDeviceOn`).
 - **Whatever configures a pin claims it** (§5.4), and whatever a program may do only once says so with `once`.
-- **A hardware fact is not relied on until a check has exercised it.** Then it goes in Appendix A. Register addresses so far were written from memory of the manual and confirmed that way.
+- **A hardware fact is not relied on until a check has exercised it.** Then it goes in Appendix A or D. Register addresses so far were written from memory of the manual and confirmed that way.
 - **Arithmetic that has to agree with the host names its sizes.** `int` is 32 bits on the board and 64 on the host, so `fixed` and `signal` use `int32`, `int64` and `uint64` throughout.
 - **Examples stay short.** A wart is noted in the example's comment, not coded around.
 - **Comments say why, briefly.** No ceremony, as in Ratel.
@@ -162,13 +169,16 @@ lutra/
   src/lutra/
     project.nim              the host side: `board "..."` and the tasks (§4.3)
     arch/riscv32/            start.nim, trap.nim
+    arch/armv7m/             start.nim, interrupts.nim, fault.nim
     chips/esp32c3.nim        and chips/esp32c3/, one module per peripheral
+    chips/stm32l475.nim      and chips/stm32l475/
     boards/esp32c3_devkitm1.nim
+    boards/b_l475e_iot01a.nim
     hal/                     the interfaces: pin, bytelink, i2c, spi
     reg, claims              registers and compile-time ownership
     fmt, time, containers, framing, fixed, signal        libraries (§8)
   checks/                    hardware checks, with their tasks in config.nims
-  examples/
+  examples/                  a folder for each board, with its own config.nims
   tests/                     host-side tests
   tools/                     empty; for the register generator
 ```
@@ -196,7 +206,11 @@ Commands every board provides, run as `nim <command> [program.nim]`:
 
 The self-check command is not called `check` because `nim check` already exists.
 
-Nim rejects flags it does not know, so options are defines placed before the command, for example `nim -d:port=/dev/ttyUSB1 flash hello.nim`. The serial port can also be named in `LUTRA_PORT`, and is found without help when only one is attached.
+Nim rejects flags it does not know, so options are defines placed before the command, for example `nim -d:port=/dev/ttyUSB1 flash hello.nim`. The serial port can also be named in `LUTRA_PORT`, and is found without help when only one board of the kind is attached: a board says what a host calls its console's port, `ttyUSB` for the DevKitM-1's bridge and `ttyACM` for an ST-LINK.
+
+`-d:board=b_l475e_iot01a` builds a project for another board than its `config.nims` names. Lutra's own checks name the DevKitM-1 and serve the other board this way.
+
+The DevKitM-1 is flashed with `esptool` and the B-L475E-IOT01A with `pyocd`, through its debug probe. Each is looked for on the `PATH`, or named in `ESPTOOL` or `PYOCD`.
 
 Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time. Port names swap when boards are replugged, so the two-board checks simply take the two ports in name order.
 
@@ -243,6 +257,8 @@ The description must be able to express:
 **Verified** for the ESP32-C3. A board declares `Memory(flashSize: 4.MB)`. The chip turns that value into the linker script when `config.nims` is evaluated, and into the offsets `flash` writes at, so `nim c` alone is a complete build. The script's file name contains a hash of its text, because Nim does not link again when only a linker script's contents change.
 
 The description has fields for the code region's size and for a reserved region at the end of flash. There is no user-facing way to set them yet.
+
+**Verified** for the STM32L475, where there is less to describe. Flash is read where it is, so there is one image, and `pyocd` takes its addresses from the linked file. A board declares `Memory(flashSize: 1.MB)` and that is the whole description.
 
 ### 5.3 Startup and code that runs before flash is readable
 
@@ -311,6 +327,22 @@ Default trap behaviour: leave the vendor's handler in place where it is useful. 
 
 **Decided:** once Lutra owns the vector, faults are still handed to the vendor's handler. **Verified:** Lutra's vector puts the vendor's `mtvec` back and returns to the faulting instruction with interrupts off, so it faults again into the boot ROM with every register as it was. No ROM address is hard-coded; the old `mtvec` is read when the vector is installed.
 
+**Verified** on the STM32L475, where the core does more of this itself:
+
+- The core reads its handlers from a table at the start of flash. The architecture layer writes the table, with a weak symbol for each of the chip's 82 interrupts, so binding is by the linker here too. A program that uses no interrupts links no handler; the table itself is 392 bytes and always there.
+- The core saves the registers, so a handler is an ordinary procedure and there is no trap entry of Lutra's. Item 1 above is therefore still to do on this architecture, where a task switch belongs in the PendSV exception.
+- Pin *n* of every port shares one line to the interrupt controller, so PA13 and PC13 cannot both have a handler. Asking for both stops the build: `Handling the interrupt that pin 13 of every port shares twice, at a.nim(9) and at a.nim(10)`.
+- `critical:` and `pin.onFalling:` read the same as on the C3, and the self-check's test of them is the same source.
+
+**Decided:** a Cortex-M has no vendor's handler to report a fault, so Lutra has a short one of its own in the architecture layer, which a board points at its console:
+
+```
+Fault: undefined instruction at 0x08000b66
+       last call from 0x080004c6
+```
+
+It names an undefined instruction, a bad address (with the address, when the core knows it) and a jump to a bad address, and calls anything else unknown. The second line is the link register: where the last call made before the fault will return to. Then it halts. **Verified** with one of each, and with a fault inside an interrupt handler. The C3 keeps the boot ROM's report.
+
 Not done: the trap vector and entry are in flash, so an interrupt can wait on a cache miss. Moving them to RAM needs the check in §5.3 to tell startup code from other RAM code.
 
 ### 5.6 Memory model
@@ -333,6 +365,8 @@ Each of these was done by hand during the port. `build`, and so `flash`, `size` 
 | No allocator symbols are linked unless the heap was requested | **Verified**, by the linker. Without the heap opt-in, a program that allocates fails to link, with an undefined reference to `end`. The message is unfriendly |
 | Image regions do not overlap | The linker enforces each region's length, and `flash` stops if the RAM-loaded image is larger than its 64K page |
 
+On the STM32L475 nothing runs before flash can be read, so the first check has nothing to do. **Verified** there: a section the linker script does not name stops the build, and a program that allocates fails to link, for want of `end` as on the C3.
+
 ### 5.8 Hardware self-check
 
 Every board ships a self-check program and the expected output. `check` runs it. The check used for the C3 port covers:
@@ -348,6 +382,8 @@ Every board ships a self-check program and the expected output. `check` runs it.
 A port is accepted when its self-check passes and Steady's benchmark gives the reference checksum (§10).
 
 **Verified** on the DevKitM-1: everything in the list except heap allocation, plus the GPIO pull-down. The idle run is 30 seconds. The check runs once and ends in the fault, so the `selfcheck` command resets the board and reads from the first byte.
+
+**Verified** on the B-L475E-IOT01A: the same list, in a program of its own, `checks/b_l475e_iot01a.nim`. The clock is measured against the board's 32.768 kHz crystal, and the fault is reported by Lutra. A fault's report ends in an address, so the command accepts a last line that goes on past what was expected.
 
 ---
 
@@ -379,6 +415,10 @@ An interface is added when a chip implements it. So far:
 | `I2cBus` | write, read, writeRead, each to an address, and each false if the device did not acknowledge | `lutra_lsm6ds33`, `lutra_lis3mdl` |
 
 The chip's own types need different names from the interfaces, so the C3's pin type is `Gpio` and a device on its SPI bus is made with `spi2.device(select = IO10)`.
+
+**Verified** on two architectures: `Pin`, `ByteSink`, `ByteLink` and `I2cBus` are implemented by both chips. Printing, the self-check's pin test and `lutra_lis3mdl` are the same source on both. `SpiDevice` still has one implementation.
+
+On the STM32L475 a peripheral's signal can come out on a few pins only, where the C3 can route any signal to any pin. A bus is brought up the same way, and the wrong pin stops the build: `PB9 cannot be I2C2 SDA. It can be PB11 or PB14.`
 
 **Verified** from outside this repository: `lutra_lsm6ds33` and `lutra_lis3mdl` each import `lutra/hal/i2c` and nothing else of Lutra. A driver there is an object that holds its bus, and its procedures take that object as a `static` parameter:
 
@@ -436,8 +476,17 @@ State of Lutra against this table, on the ESP32-C3:
 |---|---|---|
 | Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
 | Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
-| Timing and analog | Addressable LED, as far as the pulses on its pin | PWM, ADC, pulse capture |
+| Timing and analog | Addressable LED | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
+
+And on the STM32L475, which has what M4's exit needed:
+
+| Tier | Verified | Not written |
+|---|---|---|
+| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, critical sections, console, a fault report | Receive through an interrupt, a second UART, a panic handler, reset reason, sleep, a watchdog |
+| Buses | I2C controller | SPI, DMA, I2C target |
+| Timing and analog | | PWM, ADC, pulse capture |
+| TinyML inputs | | Hardware RNG, which wants a 48 MHz clock started for it; I2S; raw flash storage |
 
 ---
 
@@ -547,6 +596,8 @@ Steady stays independent of Lutra. Steady defines a minimal board contract and L
 
 **Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. Later changes to Lutra moved code about and the count became 44.26M; with Steady at `a9a2f44` it is 43.49M. The other five models have not been run.
 
+**Verified** on the B-L475E-IOT01A: `nim -d:board=b_l475e_iot01a steady` gives `ab2fdbf1` and 41.65M cycles, with the prefetch and both of the chip's flash caches on. Steady's C path gave 43.32M at the same setting, from an older build of Steady. The C3 gave 43.64M the same day. The adapter is `checks/steady.nim` for both, with the chip's timebase, cache and LED chosen at the top.
+
 Acceptance test for every board port: all six of Steady's reference models give the reference checksums, with cycle counts comparable to the C path.
 
 ---
@@ -612,7 +663,7 @@ The two boards are wired pin to pin, except UART1, which crosses: IO0 to IO1 and
 
 ### M3: First TinyML demo
 
-Built October 2026, except for what needs the author at the bench. "What is left" below is the list.
+Done, October 2026, on the reshaped exit below. "Left over" at the end is what it did not do.
 
 - I2C, I2S, ADC, PWM, addressable LED.
 - Fixed-point math, signal front-end, sampling pipeline, data capture.
@@ -636,8 +687,8 @@ What the author has on hand: no microphone and no multimeter; a soldering iron a
 | `I2cBus` interface, `lutra_lsm6ds33` | Verified on the real chip, through the package's own example: 26.4 readings a second where 26 were asked for, and flat on a table −7, 11, 1023 thousandths of g with noise of 2 to 3. It starts cleanly 10 times of 10. The gyroscope reads a steady few degrees a second at rest, which is its usual offset; its scale has not been checked by turning it |
 | `lutra_lis3mdl` | Verified on the real chip, through the package's own example: 10.5 readings a second where 10 were asked for, starting cleanly 6 times of 6, and a steady field of about 700 thousandths of a gauss with noise of 3 to 5. One axis moved by 400 when a scope probe was clipped on nearby; nobody has tried a magnet. Run together on the one bus, the two drivers gave 80.6 fields and 99.8 accelerations a second where 80 and 104 were asked for |
 | IO18 and IO19 as ordinary pins | Verified |
-| Addressable LED | The 24 pulses are verified on the pin. Nobody has seen it lit |
-| Sampling pipeline, data capture | Not written |
+| Addressable LED | Verified. The 24 pulses are checked on the pin, and the DevKitM-1's `rgb.nim` in `examples/` shows red, green and blue in that order |
+| Sampling pipeline, data capture | Not written. Moved to M5 |
 | I2S, ADC, PWM | Not written, as decided |
 
 **Decided** along the way:
@@ -676,22 +727,68 @@ mfcc.compute(samples, coefficients, fullScale = peak)
 - **Its header had to be soldered.** Loose in its holes, nothing answered, and a test with the pins' weak pull-downs showed why: the breakout's pull-up resistors were not reaching the pins.
 - **Its ADM pin has to be wired to ground.** Left alone, the magnetometer was at 0x1E whenever it had a measurement waiting and at 0x1C whenever it had not, in step with its own sampling: its address pin was following its data-ready pin, which is its neighbour both on the chip and on the board's four-hole row. Adafruit's design files (`github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`) give ADM a 10 kΩ resistor to ground, which on this board is evidently not doing its job. A scope across the two pins with the power off showed pickup, where a short would have shown nothing, and with the scope's ground clip left on ADM the address held still. A wire from ADM to GND holds it at 0x1C: 2000 of 2000 in every state.
 
-What is left, in the order to do it:
+Left over:
 
-1. **Look at the LED.** `nim flash rgb.nim` in `examples/` should step it through red, green and blue. Colours in another order mean this LED takes them in another order than green, red, blue. `nim keywords` shows blue while it works on a clip, then green.
-2. **Sampling and data capture.** Neither is written, because nothing yet says what shape they should have. For now a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints. A window of samples handed to a model wants designing against the gesture model of the demos, which does not exist.
-3. **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
-4. **Two scales nobody has checked.** The gyroscope's, which wants the board turned at a known rate, and the magnetometer's, which read about 700 thousandths of a gauss where the Earth's field alone is 250 to 650. A magnet brought near would at least show it responds.
+- **Sampling and data capture.** **Decided:** they wait for M5. Nothing yet says what shape they should have: a window of samples handed to a model wants designing against the gesture model of the demos, which does not exist. Until then a sensor is sampled at its own rate with `imu.ready`, and `nim monitor > file.csv` records what a program prints.
+- **Ask Steady for a model's input scale and zero point** in its generated code, so that `checks/keywords.nim` need not repeat them.
+- **Two scales nobody has checked.** The gyroscope's, which wants the board turned at a known rate, and the magnetometer's, which read about 700 thousandths of a gauss where the Earth's field alone is 250 to 650. A magnet brought near would at least show it responds.
 
 ### M4: Second architecture
 
+Done, October 2026.
+
 - One Cortex-M board through the same interfaces. Steady already targets the STM32L475 and SAMD51.
 - **Exit:** the self-check, one sensor driver and the Steady benchmark run with no changes to library code.
+
+**Decided:**
+
+- The board is ST's B-L475E-IOT01A. Its ST-LINK gives flashing, reset and a console over one cable, and it carries a LIS3MDL of its own. The ItsyBitsy M4 has neither a probe nor a USB bridge, so even printing would have wanted a USB device written first.
+- The port has what the exit needs and no more (§7).
+- A fault gets a short report of Lutra's own (§5.5).
+- The board's name in `config.nims` is `b_l475e_iot01a`, ST's name for it as printed.
+- `examples/` has a folder for each board, each with its own `config.nims`, so that every example is true to its board's hardware and runs with no option. Sharing names such as `led` and `button` between boards was the alternative, and the DevKitM-1 has no plain LED of its own to give the name to. `hello.nim` is in both folders, and `blink.nim` and `button.nim` are near-copies. The DevKitM-1's `button.nim` now steps its own LED through red, green and blue, so neither board's examples need anything wired but the DevKitM-1's `blink.nim`. **Verified:** all seven build, and the author has seen the DevKitM-1's button change its LED's colour.
+
+**Verified** on the board, with ST-LINK serial `066CFF3736324D5043223947`:
+
+| Piece | State |
+|---|---|
+| Bring-up | The DevKitM-1's `hello.nim`, unchanged, prints at 115200 baud: 2812 bytes of flash, 392 of them the table of vectors, and no RAM |
+| Self-check | Passes (§5.8) |
+| A sensor driver, unchanged | `lutra_lis3mdl` reads the board's own LIS3MDL, at 0x1E on I2C2, through `nim sensors`: it answers, 200 starts of 200 each after a refused transaction, readings within a tenth of the 80 a second asked for, and a field between 0.1 and 2 gauss |
+| Steady's benchmark | `ab2fdbf1`, 41.65M cycles (§10) |
+| Mistakes as compile errors | A pin claimed twice, a pin that cannot carry a signal, and two handlers on one interrupt line each stop the build with a message (§5.5, §6) |
+| Library code | `fmt`, `time`, `containers`, `framing`, `fixed`, `signal`, `hal/` and both driver packages are as they were. `claims` gained `first`, which says whether the program has come to something before |
+
+What changed outside the new architecture, chip and board:
+
+- **`lutra/project`.** `-d:board=...`; a board's `consolePorts`; reading a console drops what was sent before the port was opened; `selfcheck` accepts a last line that goes on (§4.3, §5.8).
+- **A fix to the C3.** Two pin handlers in one program did not compile, with "redefinition of 'handler'", and nor would two buffered UARTs have. Nothing had tried. The procedures a template declares for them are now its own each time (Appendix B). **Verified:** a program with two handlers builds, and `nim echo` passes both ways.
+- **`checks/sensors.nim` and `checks/steady.nim`** serve both boards, choosing at the top by what the board declares. On the C3 the refusal test now restarts the magnetometer, not the accelerometer, so that it is the same on both.
+
+**Verified** findings that shaped the port. The facts themselves are in Appendix D.
+
+- **A port of pins takes nothing in until it has its clock.** The console's transmit pin was given its function before port B's clock was on, the write was lost, and nothing came out. Every write to a pin's settings now switches its port's clock on first.
+- **The board has to bring its console up.** Nothing has before a program starts, where the C3's boot ROM has. Doing it at the top level of the board's module cost every program 1 KB of RAM and 1.4 KB of flash (Appendix B), so the chip's startup calls the board's `lutraBoardStart` before the program.
+- **Time is two timers in a chain.** Timer 2 counts cycles of the core's clock and comes round every 54 seconds. Timer 5 counts each time it does, which makes 64 bits with no interrupt. Forced to come round 200,000 times while being read, the pair never went backwards, and the high half was never seen behind the low. `micros()` takes 148 cycles, most of them a 64-bit division. Steady's notes are why it is timer 2 and not the core's own cycle counter, which stops when no debugger is attached.
+- **The clock is 0.18% fast.** It comes from the chip's own oscillator, multiplied up, and measured 80.14 MHz against the board's crystal, steady to 0.02%. Nothing corrects it, so time on this board runs that much fast. The chip can trim the oscillator against the crystal by itself; that is not switched on.
+- **The UART holds one received byte.** Left to itself it stops receiving for good once a byte arrives with the last unread: after eight bytes sent to a program that was looking away, it echoed the first and never another. It is now told to keep the newest instead, and goes on receiving. Read without pause it echoed 36 bytes sent together.
+- **A refused I2C transaction is cleared by switching the bus off and on.** That also gives up on a held line, at the driver's deadline. Nobody at an address is found in 116 µs, and a byte takes 93 µs: 97 kHz where 100 was asked for.
+- **An ST-LINK keeps what a board printed until the port is opened.** The self-check's first lines arrived twice, once from before the reset.
+- **`print` works its arguments out as it goes.** A time taken in a later argument includes printing the earlier ones, which made a 110 µs transaction look like 1.4 ms. True on the C3 too.
+
+Left over:
+
+1. **What the two chips' host sides repeat.** Each `host.nim` has its own copy of reading a linked file's sections, naming a linker script after its contents and printing sizes, about twenty lines, and each `memory.nim` its own `KB` and `MB`. Left alone until a third chip shows what is really common. The author has not said.
+2. **Nobody has looked at the board.** `led2` is driven by Steady's benchmark and read back by a test, and `userButton` reads high when not pressed. `led1` on PA5 is from ST's manual, from memory. Neither LED has been seen lit and the button has not been pressed.
+3. **The other five of Steady's models**, on either board (§10).
+4. **Tasking on a Cortex-M** (§5.5).
+5. **Floating point.** The chip has a floating-point unit, which is left off: programs are built for software floating point, as Steady builds for this chip.
 
 ### M5: Tasking and connectivity
 
 - Context primitive, cooperative tasks, the wait hook.
 - AT engine, sockets, MQTT, LoRa driver, settings store.
+- Sampling pipeline and data capture, carried over from M3 and designed against the gesture demo's model.
 - **Exit:** a gesture-recognition demo publishing over MQTT, and an anomaly-detection demo sending a LoRa packet.
 
 A first serious public release is M0 through M5.
@@ -716,10 +813,12 @@ Three use models Steady already runs on the C3.
 - Which SVD generator to use, and whether generated register files are checked in. The C3 has about sixty hand-written addresses now, and each new peripheral adds several.
 - How the heap opt-in is expressed.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
-- What a sampling pipeline and data capture look like (§11, M3).
+- What a sampling pipeline and data capture look like (§11, M5).
 
 **Known gaps, none blocking:**
 
+- The B-L475E-IOT01A has less than the DevKitM-1 (§7), and its clock is uncorrected (§11, M4).
+- Building for one board and then the other in the same folder writes the same files in `build/`, so the second build starts again from nothing.
 - Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
 - Nothing checks that `i2c0.init` frees a sensor cut off mid-read by a reset. It was tried by hand, with a program that read without pause and was reset 16 times.
 - There are no deadlines or timeouts, so every wait is forever. A link that loses a packet hangs; the checks rely on the host's timeout. The wait hook of §5.5 is not there either. The one exception is an I2C transaction, which has a deadline of its own.
@@ -804,7 +903,7 @@ The first two come from Steady's port notes. The rest were exercised on hardware
 | IO MUX | Per pin at `0x6000_9004 + 4n`. Bit 7 pull-down, bit 8 pull-up, bit 9 input enable, bits 14:12 function; function 1 is GPIO on every pin. With input enable set, an output pin's level can be read back |
 | System timer | Counts at 16 MHz regardless of core clock. Write bit 30 of `0x6002_3004` to latch, wait for bit 29, read high word at `0x6002_3040` and low word at `0x6002_3044`. Works without further setup |
 
-On the DevKitM-1, IO9 is both the boot button and an input of the USB bridge's auto-download circuit. Opening or closing the serial port on the host pulls it low for about 2 µs, which an edge interrupt sees as a press. `examples/button.nim` does not debounce, and says so.
+On the DevKitM-1, IO9 is both the boot button and an input of the USB bridge's auto-download circuit. Opening or closing the serial port on the host pulls it low for about 2 µs, which an edge interrupt sees as a press. Its `button.nim` in `examples/` does not debounce, and says so.
 
 Added for M2, on hardware unless marked:
 
@@ -829,7 +928,7 @@ Added for M3, on hardware unless marked:
 | I2C0, a transaction | Up to eight commands at `+0x58 + 4n`: operation in bits 13:11 (6 start, 1 write, 3 read, 2 stop), a byte count in 7:0, bit 8 to expect an acknowledgement of a write, bit 10 to leave a read unacknowledged. Bytes to send, each address included, go to `+0x1C`, which also gives the bytes read. The counts waiting are in `+0x08`, bits 23:18 out and 13:8 in, of 32 each way. Pulse bits 13:12 of `+0x18` to empty both, write ones to `+0x24` to clear events, then set bit 11 and bit 5 of `+0x04`. In `+0x20`, bit 7 is "complete" and bit 10 "not acknowledged". Bit 10 of `+0x04` resets the state machine, which is not enough after a refusal (§11, M3): bit 7 of `0x600C_0018`, set and cleared, resets the whole peripheral, timing registers included |
 | I2C0, a held line | With SCL low: bit 13 of `+0x20` within a few milliseconds, and never bit 7. With SDA low: bits 5, 13 and 14 the first time, and nothing at all the second |
 | Pulse generator (RMT) | Base `0x6001_6000`, channel 0 out is signal 51. Its clock is off at reset: set bit 9 of `0x600C_0010`. `+0x68` = bits 31, 26, 24 and 0: on, from the 80 MHz clock undivided, with its memory written directly. `+0x10` for channel 0: bit 16 for one block of memory, a divider of 1 in bits 15:8, bit 6 to hold the pin low when idle. The channel's 48 words are at `+0x400`; a word is a time in ticks in bits 14:0 and a level in bit 15, then the same again in 30:16 and 31, and a zero word ends the list. Pulse bits 2:1 of `+0x10` to rewind, set bit 24 and then bit 0 to play, and bit 0 of `+0x38` says it is done; clear it at `+0x44` |
-| The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin. Whether the LED agrees has not been seen |
+| The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin, and the LED shows red, green and blue when asked for each |
 
 Not verified: the reset-default function of each pin. Take it from the ESP32-C3 Technical Reference Manual.
 
@@ -903,6 +1002,10 @@ proc start() {.exportc: "_start",
 - **Going through a constant array of strings allocates.** Each string is copied on its way to the loop variable, and the program then fails to link, for want of `end`. Hold data from `staticRead` as an array of numbers, built in a `const` block.
 - **`--skipProjCfg` builds for the host from a folder whose `config.nims` selects a board.** `nim keywords` uses it to build one source file both ways. That file tells them apart with `when defined(lutraBoard)`.
 - **A module cannot import another of its own name**, wherever the other is. `checks/keywords.nim` is not `kws.nim` because Steady's generated module is.
+- **Code at the top level of a module costs an error check.** With `--exceptions:goto` each module's own code ends by testing Nim's error flag, and that test keeps `exit` in the link. A program's main module loses it when it ends in a loop, as unreachable. A board's module that set its console up at the top level did not, and with the C library that ships for ARM `exit` brought 1 KB of RAM and 1.4 KB of flash into every program. Hence `lutraBoardStart`, a procedure the startup code calls.
+- **A procedure declared in a template is visible to the next use of that template**, unlike a variable. Two `pin.onRising:` blocks in one program were a "redefinition of 'handler'". Mark such a procedure `{.gensym.}`.
+- **A name a macro makes up is looked for where the macro is expanded, and inside a procedure with a `static` parameter that is the caller's module.** `sink.write "Fault: "` in the architecture layer failed with "undeclared identifier: 'put'" when a board's module instantiated it, because `write` builds calls to `put` by name. The fault report calls `put` itself.
+- **A literal passed to a template's `uint32` parameter is still a literal.** `value shl 30` with 2 for `value` was worked out as an `int`, which is 32 bits on the target, and did not fit. Convert it in the template.
 
 ---
 
@@ -931,6 +1034,62 @@ timeout 5 cat /dev/ttyUSB0
 - The Speech Commands test set is unpacked in `checks/build/keywords/`, 150 MB, so `nim keywords` does not download it again. Deleting `checks/build` brings the download back.
 - The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3). The other DevKitM-1 was unplugged on 13 October, so `nim wiring` and `nim link` want it plugged in again, and with one board attached no port needs naming.
 - Adafruit's design files for the sensor board, which settled what its pins join, are at `github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`.
+- The B-L475E-IOT01A is attached by its ST-LINK's USB socket and appears as `/dev/ttyACM0`. With it and one DevKitM-1 attached, no port needs naming for either.
+- `pyocd` 0.45.1: `~/Documents/GitHub/Steady/.venv/bin/pyocd`, beside `esptool`. Not on `PATH`, so `export PYOCD=~/Documents/GitHub/Steady/.venv/bin/pyocd`. It reaches the probe without `sudo`; Steady's `tests/mcu/boards/stm32l475/board.sh` has the udev rule that allows that.
+- The ARM compiler is Ubuntu's `arm-none-eabi-gcc` 10.3.1, on `PATH`, with its `newlib`.
+- `pyocd commander -t stm32l475xg -c halt -c "reg pc" -c "read32 0x40021000 16" -c go` reads the chip's registers while a program runs, which is how the first silent console was explained.
+
+---
+
+## Appendix D: STM32L475 bring-up facts
+
+For the B-L475E-IOT01A: an STM32L475VG, a Cortex-M4 with 1 MB of flash, and an ST-LINK/V2-1 on the board. Addresses are from ST's reference manual RM0351, written from memory and confirmed by use. What came from Steady's port in `tests/mcu/boards/stm32l475/` says so.
+
+Everything here was exercised on hardware unless marked otherwise.
+
+### D.1 Memory and start
+
+- Flash is at `0x0800_0000` and read where it is. RAM is two blocks: 96 KB at `0x2000_0000`, which Lutra uses, and 32 KB at `0x1000_0000`, which it leaves alone. Steady's notes: the second is not found above the first, and a stack placed there faults at once.
+- The core reads a table of addresses from the start of flash: the stack to start on, the reset handler, fourteen entries for faults and system exceptions, then one for each of the chip's 82 interrupts. 392 bytes.
+- In order, `lutraReset` copies what variables start out as from flash to RAM, zeroes `.bss`, raises the clock, starts the two timers, calls the board's `lutraBoardStart` and then `NimMain`.
+- Interrupts are on at reset, with none enabled.
+- `.word 0` is not a fault here: it is two instructions that do nothing. The self-check uses `udf #0`.
+
+### D.2 Clock
+
+- The chip starts on its own 4 MHz oscillator. Flash wants four wait states at 80 MHz, set before the clock is raised: `0x4002_2000` = `0x704`, which also has the prefetch and both of flash's caches on.
+- `0x4002_100C` = `0x0100_2801` multiplies the oscillator by 40 and halves it. Set bit 24 of `0x4002_1000` and wait for bit 25, then set the low two bits of `0x4002_1008` and wait for bits 3:2 to read 3. Both peripheral buses then run at 80 MHz too.
+- Measured against the board's crystal: 80.14 MHz, 0.18% fast.
+- A peripheral's clock is switched on in `0x4002_104C` (ports A to E are bits 0 to 4), `0x4002_1058` (timer 2 is bit 0, timer 5 bit 3, I2C2 bit 22, power control bit 28, the low-power timer bit 31) or `0x4002_1060` (the register that picks pin interrupts' ports is bit 0, USART1 bit 14). The register is read back after writing, which Steady's notes say is what makes the peripheral usable on the next line; the port has not tried going without.
+- The 32.768 kHz crystal: with power control's clock on, set bit 8 of `0x4000_7000`, then bit 0 of `0x4002_1090`, and wait for bit 1. That took 2 ms after a reset with the board already powered; from cold it was not measured. Bits 19:18 of `0x4002_1088` set to 3 give the crystal to the low-power timer at `0x4000_7C00`: `+0x10` = 1, `+0x18` = `0xFFFF`, `+0x10` = 5, and the count is at `+0x1C`, read until two readings agree.
+
+### D.3 Pins and their interrupts
+
+| What | Facts |
+|---|---|
+| A port | Port A is at `0x4800_0000` and the rest follow `0x400` apart. Mode at `+0x00`, two bits a pin: 0 input, 1 output, 2 a peripheral's, 3 analog. Open drain at `+0x04`, a bit a pin. Pulls at `+0x0C`, two bits: 1 up, 2 down. Input at `+0x10`, output at `+0x14`. Writing a bit in the low half of `+0x18` sets a pin and in the high half clears it. Function numbers at `+0x20` and `+0x24`, four bits a pin |
+| Before its clock is on | A port's registers take nothing in. Reading a pin of an output gives the level at the pin |
+| Functions | USART1 is function 7 on PB6 (out) and PB7 (in). I2C2 is function 4 on PB10 (clock) and PB11 (data). PA9, PA10, PB13 and PB14 are listed as their alternatives from the datasheet and have not been tried |
+| Edge interrupts | Sixteen lines, one for pin *n* of whichever port bits 4*n* of `0x4001_0008 + 4 × (n div 4)` name. Rising edges at `0x4001_0408`, falling at `0x4001_040C`, enabled at `0x4001_0400`, pending at `0x4001_0414` and cleared there by writing a 1. Lines 0 to 4 are interrupts 6 to 10, lines 5 to 9 share interrupt 23, and 10 to 15 share 40. An output pin's own edges raise its line |
+| The interrupt controller | In the core. Interrupt *n* is let through by bit *n* mod 32 of `0xE000_E100 + 4 × (n div 32)` |
+| On this board | PB14 drives LED2. PC13 is the button and is held high by the board. PA4, PA5, PA15, PB2 and PC0 to PC5 follow their pulls, so nothing on the board drives them. PA5 as LED1, and which header pin is which, are from ST's manual UM2153, from memory |
+
+### D.4 Peripherals used
+
+| Peripheral | Facts |
+|---|---|
+| USART1 | Base `0x4001_3800`, to the ST-LINK on PB6 and PB7. `+0x0C` is the bus clock divided by the baud rate, 694 for 115200. `+0x00` = `0xD` enables it both ways. In `+0x1C`, bit 7 says there is room to send and bit 5 that a byte has come. Send at `+0x28`, receive at `+0x24`. Bit 12 of `+0x08`, set before it is enabled, makes a byte that arrives with the last unread replace it; without that the port stops receiving until an error flag is cleared |
+| Timers 2 and 5 | Bases `0x4000_0000` and `0x4000_0C00`, both 32 bits, counting the 80 MHz bus clock when `+0x00` = 1. Count at `+0x24`. Timer 2's `+0x04` = `0x20` tells others when it comes round, and timer 5's `+0x08` = 7 makes it count that: its first internal trigger is timer 2 |
+| I2C2 | Base `0x4000_5800`, clocked at 80 MHz. `+0x10` holds the timing: a divider less one in bits 31:28, then the data line's setup and hold in 23:20 and 19:16, and the clock's high and low times, each less one, in 15:8 and 7:0. `0x90F2_232B` is 100 kHz. `+0x00` = 1 enables it. A transfer is started by writing `+0x04`: the address in bits 7:1, bit 10 to read, a count of bytes in 23:16, bit 13 to start, and bit 25 to stop when the count is done. In `+0x18`, bit 1 asks for a byte to send (`+0x28`), bit 2 offers one received (`+0x24`), bit 4 says the device refused, bit 5 that a stop went out, which it does after a refusal too, and bit 6 that the count is done with no stop asked for. Bits 4 and 5 are cleared at `+0x1C` |
+| I2C2, on this board | Seven addresses answer: 0x1E (the LIS3MDL, whose identity register reads `0x3D`), 0x29, 0x2D, 0x56, 0x5D (`0xB1`), 0x5F (`0xBC`) and 0x6A (`0x6A`, an LSM6DSL, which `lutra_lsm6ds33` does not know) |
+| Faults | The status is at `0xE000_ED28`: bit 16 an undefined instruction, bits 12:9 a bad address read or written, bits 17, 8 and 0 a jump to one. Bit 15 says the address is at `0xE000_ED38`. The core pushes eight registers onto the stack in use, the instruction's address seventh and the link register sixth |
+
+### D.5 Building and flashing
+
+- Compiler flags: `-mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections`. Nim flags as for the C3, with `--cpu:arm`.
+- Linker flags: `-nostartfiles --specs=nosys.specs -Wl,--gc-sections` and the linker script. The stubs are there because Nim's runtime refers to `exit`, which this C library builds on `_exit`. None is linked into hello world.
+- `pyocd flash -t stm32l475xg app.elf` programs the linked file as it is and starts it. `pyocd reset -t stm32l475xg` resets it, and takes a second or so over it.
+- Hello world over serial is 2812 bytes of flash and no RAM.
 
 ---
 

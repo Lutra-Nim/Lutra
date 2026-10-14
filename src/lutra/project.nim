@@ -11,14 +11,17 @@
 ##   nim size hello.nim       Build, and show what each memory region holds
 ##   nim selfcheck            Run the board's hardware self-check
 ##
-## The serial port is found when only one is attached. Otherwise name it with
-## `-d:port=/dev/ttyUSB1` before the task, or in `LUTRA_PORT`. `monitor` takes
-## `-d:reset` to reset the board before it starts reading, and `-d:baud=...`.
+## The serial port is found when only one board of the kind is attached.
+## Otherwise name it with `-d:port=/dev/ttyUSB1` before the task, or in
+## `LUTRA_PORT`. `monitor` takes `-d:reset` to reset the board before it starts
+## reading, and `-d:baud=...`. `-d:board=...` builds for another board than the
+## one `config.nims` names.
 
 import std/[macros, os, strutils, algorithm]
 
 const
   namedPort {.strdefine: "port".} = ""
+  otherBoard {.strdefine: "board".} = ""
   baud {.intdefine.} = 115200
   resetFirst {.booldefine: "reset".} = false
   source = currentSourcePath().parentDir.parentDir ## Holds lutra.nim
@@ -50,10 +53,12 @@ proc elf*(program: string): string =
 proc compile*(program: string, switches = "") =
   selfExec arguments().switches & switches & " c " & quoteShell(program)
 
+var portNames: seq[string] ## How the host names the port of the board's console
+
 proc serialPorts*(): seq[string] =
-  ## Every port a board could be on, in order
+  ## Every port the board could be on, in order
   for file in listFiles("/dev"):
-    for prefix in ["ttyUSB", "ttyACM", "cu.usbserial", "cu.usbmodem"]:
+    for prefix in portNames:
       if file.extractFilename.startsWith(prefix): result.add file
   result.sort()
 
@@ -69,8 +74,11 @@ proc serialPort*(): string =
 proc console(port, resetCommand, reader: string): string =
   ## A shell command that reads a board's console. The port is opened once and
   ## held, so that nothing sent after a reset is lost before reading starts.
-  "exec 3<>" & port & "; " & resetCommand & "; stty " & $baud &
-    " raw -echo -hupcl <&3; " & reader & " <&3"
+  ## What was sent before is dropped: a debug probe keeps it until the port is
+  ## opened.
+  let mode = "stty " & $baud & " raw -echo -hupcl <&3; "
+  "exec 3<>" & port & "; " & mode & "timeout 0.2 cat <&3 >/dev/null; " & resetCommand & "; " &
+    mode & reader & " <&3"
 
 proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
   ## A shell command that resets a board and prints what it prints, from the
@@ -85,10 +93,12 @@ proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): st
 proc capture*(port, resetCommand, first, last: string, seconds = 120): string =
   gorge(captureCommand(port, resetCommand, first, last, seconds)).replace("\r", "")
 
-template board*(name: static string) =
+template board*(default: static string) =
+  const name = (if otherBoard != "": otherBoard else: default)
   importBoard(name)
   # What a board brings with it
-  mixin memory, configure, audit, checkFlasher, flash, size, resetCommand
+  mixin memory, consolePorts, configure, audit, checkFlasher, flash, size, resetCommand
+  portNames = @consolePorts
 
   switch("define", "lutraBoard=" & name)
   switch("path", source)
@@ -139,6 +149,6 @@ template board*(name: static string) =
     let got = capture(serialPort(), resetCommand(serialPort()),
       expected.splitLines[0], expected.splitLines[^1]).strip
     echo got
-    if got != expected:
+    if not got.startsWith(expected): # The last line may go on, with the address of a fault
       quit "\nThe self-check FAILED. It should have printed:\n" & expected
     echo "\nThe self-check passed."

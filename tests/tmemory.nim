@@ -16,3 +16,11 @@ doAssert "__global_pointer$ = " in script
 # Holding back the end of flash comes out of the constants
 doAssert Memory(flashSize: 4.MB, reservedSize: 1.MB).constantsSize == 2.MB
 doAssertRaises(AssertionDefect): discard Memory(flashSize: 4.MB, codeSize: 1000).linkerScript
+
+# The B-L475E-IOT01A's, likewise
+from lutra/chips/stm32l475/memory as stm32 import nil
+
+let other = stm32.linkerScript(stm32.Memory(flashSize: 1.MB))
+doAssert "ORIGIN = 0x08000000, LENGTH = 1048576" in other
+doAssert "ORIGIN = 0x20000000, LENGTH = 98304" in other
+doAssert other.find(".vectors") < other.find(".text") # The core looks for its table at the very start
