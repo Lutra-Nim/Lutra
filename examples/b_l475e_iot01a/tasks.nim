@@ -3,11 +3,13 @@
 
 import lutra
 
-task blink:
+proc blink() {.task.} =
   led2.output()
   while true:
     led2.toggle()
     delay 250.ms
+
+start blink
 
 while true:
   print "up ", millis(), " ms\n"

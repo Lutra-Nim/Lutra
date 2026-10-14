@@ -50,13 +50,13 @@ What exists, all exercised on hardware:
 | Area | What |
 |---|---|
 | Bring-up | Startup from the boot ROM, 160 MHz, flash mapping, a linker script generated from the board's memory description |
-| Pins | GPIO, pulls, edge interrupts as `pin.onFalling:` blocks, compile-time ownership |
+| Pins | GPIO, pulls, edge interrupts as `{.interrupt: pin.falling.}` procs, compile-time ownership |
 | UART | Both ports, polled or received through an interrupt into a ring buffer, on any pins |
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
 | I2C | Controller, on any pins. Reads and writes verified against a real sensor |
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
-| Tasks | `task name:` blocks that take turns, `wait cond` and `wait(cond, within = ...)`, and a report of a task's stack overflowing (§5.5) |
+| Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, and a report of a task's stack overflowing (§5.5) |
 | Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
@@ -299,14 +299,21 @@ Not built: naming pins in an optional declaration block, and printing a wiring t
 
 ### 5.5 Interrupts, trap entry and tasking
 
-**Decided.** Interrupts are off unless a program asks for them. Handlers are bound at compile time, and a program writes one as a block:
+**Decided.** Interrupts are off unless a program asks for them. A handler is a proc whose pragma says what calls it, bound at compile time, and `start` switches it on:
 
 ```nim
-bootButton.onFalling:
+proc pressed() {.interrupt: bootButton.falling.} =
   led.toggle()
+
+proc either() {.interrupt: IO4.rising | IO5.falling.} =
+  inc edges
+
+start pressed
 ```
 
-The block becomes an ordinary procedure, and the interrupt is switched on at that point in the program. A second handler for the same source is a compile error. A variable a handler shares with the rest of the program has to be declared `{.volatile.}`.
+A second handler for the same source is a compile error, which names the lines of both. So is starting anything that is not a `{.task.}` or `{.interrupt.}` proc, and calling one as a proc. A variable a handler shares with the rest of the program has to be declared `{.volatile.}`. Events joined by `|` share one handler. A pin's events are `rising`, `falling` and `changing`.
+
+**Decided**, October 2026: handlers and tasks are procs with a pragma, rather than the blocks they were first, `bootButton.onFalling: ...` and `task blink: ...`. They read as ordinary Nim, and the pragma puts a handler and what calls it in one place, where a mistake is a compile error. Declaring and starting are separate, so that a program can start one later or only sometimes. Nim cannot have a new keyword such as `task blink() =`; the parser rejects it before any macro sees it.
 
 **Verified** on the C3:
 
@@ -333,7 +340,7 @@ Default trap behaviour: leave the vendor's handler in place where it is useful. 
 - The core reads its handlers from a table at the start of flash. The architecture layer writes the table, with a weak symbol for each of the chip's 82 interrupts, so binding is by the linker here too. A program that uses no interrupts links no handler; the table itself is 392 bytes and always there.
 - The core saves the registers, so a handler is an ordinary procedure and there is no trap entry of Lutra's. Item 1 above is therefore still to do on this architecture, where a task switch belongs in the PendSV exception.
 - Pin *n* of every port shares one line to the interrupt controller, so PA13 and PC13 cannot both have a handler. Asking for both stops the build: `Handling the interrupt that pin 13 of every port shares twice, at a.nim(9) and at a.nim(10)`.
-- `critical:` and `pin.onFalling:` read the same as on the C3, and the self-check's test of them is the same source.
+- `critical:` and `{.interrupt: pin.rising.}` read the same as on the C3, and the self-check's test of them is the same source.
 
 **Decided:** a Cortex-M has no vendor's handler to report a fault, so Lutra has a short one of its own in the architecture layer, which a board points at its console:
 
@@ -347,30 +354,32 @@ It names an undefined instruction, a bad address (with the address, when the cor
 **Decided**, October 2026, for tasks:
 
 ```nim
-task blink:
+proc blink() {.task.} =
   while true:
     led2.toggle()
     delay 250.ms
 
-task(repeater, stack = 4.KB):
+proc repeater() {.task(stack = 4.KB).} =
   while true:
     console.send console.receive() # Hands over until a byte comes
 
+start blink
+start repeater
 if not wait(raised, within = 100.ms): print "Too slow\n"
 ```
 
-- Tasks take turns: each runs until it waits, so the code between two waits is never interrupted by another task, and what tasks share needs no lock. A `task` block starts its task where it is written, as `onFalling:` switches its interrupt on there. The program itself takes turns with the tasks, and when it ends they go on.
-- A new task joins the end of the line, so tasks take turns in the order they started. A task whose block ends leaves the line. Coming to a `task` block again while its task runs does nothing.
+- Tasks take turns: each runs until it waits, so the code between two waits is never interrupted by another task, and what tasks share needs no lock. `start` starts a task. The program itself takes turns with the tasks, and when it ends they go on.
+- A new task joins the end of the line, so tasks take turns in the order they started. A task whose proc returns leaves the line. Starting a task that is running does nothing.
 - Every wait hands over: `delay`, `wait cond`, `wait(cond, within = ...)`, which is false when the time ran out, and a driver's wait on the world outside. That is UART receive, an SPI device's ready line and an SPI target's wait for its controller. Sending on a UART, an I2C transaction, an SPI controller's transfer and the LED's pulses do not hand over, so a `print` comes out whole and two tasks can share a bus.
 - A wait inside an interrupt handler does not hand over. On a Cortex-M the core says whether a handler is running. On RISC-V the trap entry sets a flag around the call to the chip's handler.
-- A stack is 2 KB unless the block says otherwise. Its lowest word holds a known value, which is checked whenever its task hands over. If it has changed, `Task repeater overflowed its stack of 4096 bytes` goes to the console and everything stops.
+- A stack is 2 KB unless the pragma says otherwise. Its lowest word holds a known value, which is checked whenever its task hands over. If it has changed, `Task repeater overflowed its stack of 4096 bytes` goes to the console and everything stops.
 - Tasks are cooperative only. Preemption would need locks around everything the bullet above leaves uninterrupted, and nothing asks for it yet.
 
 **Verified** on both boards, by a section of each self-check and by `tasks.nim` in each board's `examples/`:
 
 - The order of turns, a task ending, a `delay` in one task while another counts its own, `wait` with and without its time running out, and a handler that waits while a task is ready, which must not hand over.
 - A hand-over takes 80 cycles on the STM32L475 and 77 on the C3: 1 µs and 0.5 µs.
-- A program that starts no task is unchanged but for 8 to 12 bytes. The hook is a weak symbol, `lutraIdle`, that does nothing. The first `task` block defines it again, as a call to the scheduler, and the linker takes that instead, as it binds interrupt handlers. Nothing else of the scheduler is linked without it.
+- A program that starts no task is unchanged but for 8 to 12 bytes. The hook is a weak symbol, `lutraIdle`, that does nothing. The first `{.task.}` proc defines it again, as a call to the scheduler, and the linker takes that instead, as it binds interrupt handlers. Nothing else of the scheduler is linked without it.
 - Switching stacks saves only the registers a call must keep: `ra` and `s0` to `s11` on RISC-V, `r4` to `r11` and `lr` on the Cortex-M, which has no floating-point registers to save while programs are built for software floating point. A new stack is set out as a switch leaves one, with the task's first instruction where it will return to. The library finds the architecture's three routines, `lutraSwitch`, `lutraPrepare` and `lutraInHandler`, by their names, through the linker.
 - The overflow report, on both boards, from a task given 256 bytes that recursed far past them.
 
@@ -841,7 +850,8 @@ Begun October 2026.
 Found along the way, and fixed:
 
 - The self-check's pin test read a pin straight after setting it, and on the STM32L475 that read gives the old level almost every time (Appendix D). It passed only because the compiler happened to put other loads between. It now waits a microsecond, on both boards.
-- A task declared inside a procedure never ran: the scheduler's hook, declared by the first `task` block, was left out (Appendix B).
+- A task declared inside a procedure never ran: the scheduler's hook, declared by the first task, was left out (Appendix B).
+- Tasks and handlers became procs with a pragma (§5.5), at the author's asking. **Verified**: both self-checks, the examples, a handler for two pins' events on the STM32L475, a task exported from another module, and the compile errors for two handlers on one source, for a task with parameters, for starting a plain proc and for calling a task.
 
 Of Steady's models, `ad` is MLPerf Tiny's machine-sound autoencoder, 640 inputs from five frames of 128 log-mel bands. The battery anomaly demo would need a different model, or a microphone and the sound of a machine.
 
@@ -1063,7 +1073,9 @@ proc start() {.exportc: "_start",
 - **Nim does not link again when only a linker script's contents change.** It compares the link command, not the files it names.
 - **A generic procedure binds a name early if `system` already has one symbol by that name.** `link.send(c)` resolved to the channel `send` on the host, and `reset(port)` to `system.reset`. Declare such names with `mixin`. A library written against a concept needs this too, for `send` and `receive`, or it only compiles for the target.
 - **A template parameter is substituted into field accesses.** With a parameter called `name`, `file.name` in the body becomes `file."the argument"`. A field named in a template is also bound to whatever has that name where the template is defined: a tuple field called `memory` was taken for the board's constant. A type declared outside the template has neither problem.
-- **A procedure declared inside another is left out unless something refers to it**, even one marked `exportc`. At the top level it is kept. A `task` block inside a procedure declared the scheduler's hook, which nothing in Nim calls, so it was never generated; taking its address keeps it.
+- **A procedure declared inside another is left out unless something refers to it**, even one marked `exportc`. At the top level it is kept. A task declared inside a procedure declared the scheduler's hook, which nothing in Nim calls, so it was never generated; taking its address keeps it.
+- **A macro used as a pragma cannot have a parameter with a default**: `{.task.}` is then an "invalid pragma". Two overloads instead make Nim check the proc before either macro runs, which declares its name, so the macro's own declaration of it is a redefinition. One macro taking `varargs[untyped]` has neither problem.
+- **`quote` gives back a single node when its body is one statement**, not a statement list, and what is added to it goes inside that node. Wrap it in `newStmtList`.
 - **GNU `ld` cannot place a section by its own size.** `.stacks (ORIGIN(ram) + LENGTH(ram) - SIZEOF(.stacks))` takes the size as 0 and then overflows the region.
 - **A `static` object parameter cannot size the return type.** `func table(m: static Mfcc): array[m.melBins, int32]` fails with "cannot evaluate at compile time: m". Pass the size as a `static int` of its own.
 - **Going through a constant array of strings allocates.** Each string is copied on its way to the loop variable, and the program then fails to link, for want of `end`. Hold data from `staticRead` as an array of numbers, built in a `const` block.

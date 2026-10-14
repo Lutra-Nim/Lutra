@@ -4,7 +4,7 @@
 
 import lutra
 
-task colours:
+proc colours() {.task.} =
   while true:
     rgbLed.color(red = 20)
     delay 500.ms
@@ -12,6 +12,8 @@ task colours:
     delay 500.ms
     rgbLed.color(blue = 20)
     delay 500.ms
+
+start colours
 
 while true:
   print "up ", millis(), " ms\n"

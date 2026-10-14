@@ -86,7 +86,16 @@ template pullDown*(pin: static Gpio) =
 template noPull*(pin: static Gpio) =
   pin.mux[] = pin.mux[] and not (pullUpEnable or pullDownEnable)
 
-type Edge = enum rising = 1, falling, either
+type
+  Edge* = enum risingEdge = 1, fallingEdge, eitherEdge
+  PinEvent* = object
+    ## An edge on a pin, which an `{.interrupt.}` proc can be bound to
+    pin*: Gpio
+    edge*: Edge
+
+func rising*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: risingEdge)
+func falling*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: fallingEdge)
+func changing*(pin: Gpio): PinEvent = PinEvent(pin: pin, edge: eitherEdge)
 
 # Pins nobody handles are left out of the link, as null entries
 {.emit: block:
@@ -104,15 +113,13 @@ proc pinInterrupt() {.exportc: "lutra_interrupt_" & $gpioSource.line, cdecl.} =
   for pin in 0..21:
     if (pending shr pin and 1) != 0: pinHandlers[pin]()
 
-template onEdge(pin: static Gpio, edge: Edge, body: untyped) =
-  once("Handling the interrupt of IO" & $pin.num, at(instantiationInfo(-2)))
-  proc handler() {.gensym, exportc: "lutra_gpio_" & $pin.num, cdecl.} = body
-  Reg(gpioPin + 4 * pin.num.uint32)[] = (edge.uint32 shl 7) or (1 shl 13)
+template attach*(event: static PinEvent, where: static string, handler: untyped) =
+  ## Binds `handler` to `event`, for `arm` to switch on. `where` is the
+  ## handler's line, for the message when a pin has two.
+  once("Handling the interrupt of IO" & $event.pin.num, where)
+  proc entry() {.gensym, exportc: "lutra_gpio_" & $event.pin.num, cdecl.} = handler()
+  discard cast[pointer](entry) # Inside a procedure, Nim leaves out one nothing refers to
+
+template arm*(event: static PinEvent) =
+  Reg(gpioPin + 4 * event.pin.num.uint32)[] = (event.edge.uint32 shl 7) or (1 shl 13)
   enable(gpioSource)
-
-template onRising*(pin: static Gpio, body: untyped) =
-  ## Runs `body` as an interrupt, from here on, whenever the pin goes high
-  onEdge(pin, rising, body)
-
-template onFalling*(pin: static Gpio, body: untyped) = onEdge(pin, falling, body)
-template onChange*(pin: static Gpio, body: untyped) = onEdge(pin, either, body)

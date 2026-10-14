@@ -37,20 +37,24 @@ nim monitor
 | `nim size hello.nim` | Build, and show what each memory region holds |
 | `nim selfcheck` | Run the board's hardware self-check and compare its output |
 
-An interrupt handler is a block, bound at compile time:
+An interrupt handler is a proc that says what calls it, bound at compile time and switched on by `start`:
 
 ```nim
-bootButton.onFalling:
+proc pressed() {.interrupt: bootButton.falling.} =
   led.toggle()
+
+start pressed
 ```
 
 So is a task. Tasks take turns with the program, each running until it waits:
 
 ```nim
-task blink:
+proc blink() {.task.} =
   while true:
     led2.toggle()
     delay 250.ms   # The program and the other tasks run meanwhile
+
+start blink
 
 if not wait(sensor.ready, within = 100.ms):
   print "No sensor\n"

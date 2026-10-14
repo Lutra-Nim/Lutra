@@ -7,12 +7,13 @@ import lutra
 
 var presses {.volatile.}: uint32 # Changed by the handler, so read it afresh each time
 
-led2.output()
-userButton.input()
-
-userButton.onFalling:
+proc pressed() {.interrupt: userButton.falling.} =
   led2.toggle()
   inc presses
+
+led2.output()
+userButton.input()
+start pressed
 
 while true:
   print presses, " presses\n"

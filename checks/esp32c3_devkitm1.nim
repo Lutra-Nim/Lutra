@@ -78,11 +78,14 @@ checkPin(IO4)
 # The pin interrupts itself. Inside a critical section the handler has to wait,
 # and it has to run on the way out.
 var edges {.volatile.}: uint32
-IO4.output()
-IO4.low()
-IO4.onRising:
+
+proc count() {.interrupt: IO4.rising.} =
   inc edges
   idle() # Which has to do nothing here, as is checked with tasks below
+
+IO4.output()
+IO4.low()
+start count
 
 block:
   var kept = true
@@ -154,15 +157,18 @@ proc note(c: char) =
   order[noted] = c
   inc noted
 
-task first:
+proc first() {.task.} =
   for _ in 1..3:
     note 'a'
     idle()
 
-task second:
+proc second() {.task.} =
   for _ in 1..2:
     note 'b'
     idle()
+
+start first
+start second
 
 for _ in 1..4:
   note 'p'
@@ -174,19 +180,23 @@ var
   ticks: uint32
   raised: bool
 
-task spinner:
+proc spinner() {.task.} =
   while true:
     inc turns
     idle()
 
-task ticker:
+proc ticker() {.task.} =
   while true:
     delay 10.ms
     inc ticks
 
-task raiser:
+proc raiser() {.task.} =
   delay 20.ms
   raised = true
+
+start spinner
+start ticker
+start raiser
 
 block:
   let start = ticks

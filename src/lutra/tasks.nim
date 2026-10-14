@@ -1,15 +1,17 @@
 ## Tasks that take turns. Each runs until it waits, and then the next in line
 ## runs, so code between two waits is never interrupted by another task:
 ##
-##   task blink:
+##   proc blink() {.task.} =
 ##     while true:
 ##       led.toggle()
 ##       delay 500.ms
 ##
-## `task` is in `lutra`. Every wait goes through `idle`, which does nothing
-## until a program starts a task: the linker then binds it to `pass` instead.
-## A driver waits through it only on the world outside, as for a byte to
-## arrive, and never part-way through something another task could break
+##   start blink
+##
+## The `task` pragma is in `lutra`. Every wait goes through `idle`, which
+## does nothing until a program has a task: the linker then binds it to `pass`
+## instead. A driver waits through it only on the world outside, as for a byte
+## to arrive, and never part-way through something another task could break
 ## into, so a `print` comes out whole. An interrupt handler's waits never
 ## hand over.
 
@@ -58,7 +60,7 @@ proc before(task: ptr Task): ptr Task =
   result = task
   while result.next != task: result = result.next
 
-proc start(task: var Task, name: cstring, stack: var openArray[uint32], entry: proc() {.nimcall.}) =
+proc begin(task: var Task, name: cstring, stack: var openArray[uint32], entry: proc() {.nimcall.}) =
   if running == nil:
     program.next = addr program
     running = addr program
@@ -71,10 +73,10 @@ proc start(task: var Task, name: cstring, stack: var openArray[uint32], entry: p
   task.next = running
   running.before.next = addr task
 
-proc start*(stack: var Stack, name: cstring, entry: proc() {.nimcall.}) =
+proc begin*(stack: var Stack, name: cstring, entry: proc() {.nimcall.}) =
   ## Puts a task at the end of the line, so that its first turn comes after
   ## everyone else's. A task already in line stays where it is.
-  start(stack.task, name, stack.words, entry)
+  begin(stack.task, name, stack.words, entry)
 
 proc pass*(console: static ByteSink) =
   ## Hands over to the next task in line. A stack found overflowed is
