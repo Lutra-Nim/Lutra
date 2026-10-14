@@ -20,16 +20,27 @@ template claim*(pin: static Gpio, role: static string) =
   ## used that template
   claim("IO" & $pin.num, role, at(instantiationInfo(-2)))
 
+template asGpio(pin: static Gpio) =
+  # IO18 and IO19 start out as the pads of the chip's USB port, which holds
+  # them whatever else is asked of them
+  when pin.num in 18..19: usbPads[] = usbPads[] and not ((1'u32 shl 14) or (1 shl 9))
+  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+
 # From here to `listen` is for the chip's own peripherals, which claim pins for
 # themselves. Any peripheral signal can be routed to any pin.
 template routeOut*(pin: static Gpio, signal: int) =
-  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  pin.asGpio()
   pin.outSelect[] = signal.uint32
   gpioEnableSet[] = pin.mask
 
 template routeIn*(pin: static Gpio, signal: int) =
-  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  pin.asGpio()
   Reg(gpioInSelect + 4 * signal.uint32)[] = pin.num.uint32 or (1 shl 6) # Bit 6: from a pin, not fixed
+
+template openDrain*(pin: static Gpio) =
+  ## Only ever pulls the pin low, leaving a resistor to take it high: what a
+  ## line that several devices drive needs
+  Reg(gpioPin + 4 * pin.num.uint32)[] = Reg(gpioPin + 4 * pin.num.uint32)[] or (1 shl 2)
 
 template drive*(pin: static Gpio) =
   pin.routeOut(0x80) # From `gpioOut` rather than a peripheral
@@ -44,7 +55,7 @@ template filter*(pin: static Gpio) =
   pin.mux[] = pin.mux[] or filterEnable
 
 template listen*(pin: static Gpio) =
-  pin.mux[] = pin.mux[] and not function or gpioFunction or inputEnable
+  pin.asGpio()
   gpioEnableClear[] = pin.mask
 
 template output*(pin: static Gpio) =

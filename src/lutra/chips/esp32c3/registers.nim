@@ -28,6 +28,30 @@ const
   spiTargetLength* = 0xE4'u32
   spiClockGate* = 0xE8'u32
 
+  # I2C, as offsets from a bus's base
+  i2cSclLow* = 0x00'u32
+  i2cControl* = 0x04'u32
+  i2cStatus* = 0x08'u32
+  i2cFifoConfig* = 0x18'u32
+  i2cData* = 0x1C'u32
+  i2cEvents* = 0x20'u32
+  i2cEventsClear* = 0x24'u32
+  i2cSdaHold* = 0x30'u32
+  i2cSdaSample* = 0x34'u32
+  i2cSclHigh* = 0x38'u32
+  i2cStartHold* = 0x40'u32
+  i2cRestartSetup* = 0x44'u32
+  i2cStopHold* = 0x48'u32
+  i2cStopSetup* = 0x4C'u32
+  i2cCommand* = 0x58'u32 # Eight
+
+  # The pulse generator's channel 0, the only one in use
+  pulseChannel* = Reg 0x6001_6010
+  pulseEvents* = Reg 0x6001_6038
+  pulseEventsClear* = Reg 0x6001_6044
+  pulseConfig* = Reg 0x6001_6068
+  pulseMemory* = 0x6001_6400'u32 # 48 words
+
   # DMA channel 0, the only one in use
   dmaIn* = Reg 0x6003_F070
   dmaInLink* = Reg 0x6003_F080
@@ -48,6 +72,7 @@ const
   gpioInSelect* = 0x6000_4154'u32 # One per signal
   gpioOutSelect* = 0x6000_4554'u32 # One per pin
   ioMux* = 0x6000_9004'u32 # One per pin
+  usbPads* = Reg 0x6004_3018
 
   rtcWatchdog* = Reg 0x6000_8090
   rtcWatchdogProtect* = Reg 0x6000_80A8
@@ -70,6 +95,7 @@ const
   cpuClock* = Reg 0x600C_0008
   peripheralClocks* = Reg 0x600C_0010
   peripheralClocks1* = Reg 0x600C_0014
+  peripheralResets* = Reg 0x600C_0018
   peripheralResets1* = Reg 0x600C_001C
   systemClock* = Reg 0x600C_0058
   cacheControl* = Reg 0x600C_4000

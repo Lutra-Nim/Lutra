@@ -8,6 +8,6 @@ when defined(nimscript):
   import esp32c3/host
   export host
 else:
-  import esp32c3/[startup, gpio, uart, spi, clock, interrupts, random]
-  export gpio except routeOut, routeIn, drive, driveGently, filter, listen
-  export uart, spi, clock, random, interrupts.critical
+  import esp32c3/[startup, gpio, uart, i2c, spi, led, clock, interrupts, random]
+  export gpio except routeOut, routeIn, openDrain, drive, driveGently, filter, listen
+  export uart, i2c, spi, led, clock, random, interrupts.critical

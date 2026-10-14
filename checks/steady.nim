@@ -11,7 +11,7 @@ proc board_putc(c: char) = console.send(c)
 proc board_cycles(): uint32 = cycles()
 proc board_sysclk(): uint32 = cpuHz
 proc board_timebase(): cstring = "pccr"
-proc board_led(on: cint) = discard # The only LED needs a driver
+proc board_led(on: cint) = (if on != 0: rgbLed.color(green = 20) else: rgbLed.off())
 proc board_poll() = discard
 # There is one cache in front of flash and it can't be turned off
 proc board_cache_configs(): cint = 1
