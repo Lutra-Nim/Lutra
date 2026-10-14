@@ -78,6 +78,8 @@ macro task*(args: varargs[untyped]): untyped =
   let p = args[^1]
   var stack = newLit(2048)
   for arg in args[0 ..< ^1]:
+    if arg.kind == nnkExprEqExpr and not arg[0].eqIdent("stack"):
+      error "A task has one setting, its stack: {.task(stack = 4.KB).}", arg
     stack = if arg.kind == nnkExprEqExpr: arg[1] else: arg
   let
     (name, exported, start) = plain(p, "A task")

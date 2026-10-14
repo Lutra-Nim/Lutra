@@ -30,3 +30,7 @@ doAssert packet[0] == valuesKind and packet.toOpenArray(0, length - 1).values ==
 length = Loop().receiveFrame(packet)
 doAssert packet.toOpenArray(0, length - 1).values == @[-7'i64, 1023, 6, 0]
 doAssert wire.len == 0
+
+Loop().record(max(a, b))
+length = Loop().receiveFrame(packet)
+doAssert cast[string](packet[1 ..< length]) == "\"max(a, b)\""

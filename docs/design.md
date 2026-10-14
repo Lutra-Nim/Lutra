@@ -41,9 +41,9 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks are done on both boards (§5.5).
+Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks, timer events and data capture are done on both boards (§5.5, §8.2).
 
-Where to pick up: M5, whose plan and order are in §11. The next piece is up to the author; §11 lists what is left and what each needs of him.
+Where to pick up: M5, on the branch `feature/tasks`, with tasks, timer events and data capture done (§11). Next is raw flash storage on both chips, then the settings store. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. The B-L475E-IOT01A should be done with before the work that needs the second DevKitM-1, as only two boards can be plugged in at once (Appendix C).
 
 What exists, all exercised on hardware:
 
@@ -61,7 +61,7 @@ What exists, all exercised on hardware:
 | Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `capture`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
 
-On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1, I2C, time, the cycle counter, `critical:` sections, tasks and a fault report of Lutra's own (§5.5). `hello.nim` is the same program in both boards' folders of `examples/`.
+On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1, I2C, time, the cycle counter, `critical:` sections, tasks, timer events, data capture and a fault report of Lutra's own (§5.5). `hello.nim` is the same program in both boards' folders of `examples/`.
 
 How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards of one kind attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`. The checks run on the DevKitM-1 unless `-d:board=b_l475e_iot01a` comes before the command.
 
@@ -314,7 +314,7 @@ proc either() {.interrupt: IO4.rising | IO5.falling.} =
 start pressed
 ```
 
-A timer is an event too: `proc tick() {.interrupt: every(10.ms).}` takes the next free hardware timer, and a program that wants more than the chip has does not compile: `every(3000 us) at a.nim(4) needs a timer, and the STM32L475's two are taken`. Neither does a period the timer cannot count. **Verified** on both boards (Appendices A and D): a 1 ms and a 250 ms event together, each counting what it should over 500 ms.
+A timer is an event too: `proc tick() {.interrupt: every(10.ms).}` takes the next free hardware timer, and a program that wants more than the chip has does not compile: `every(3000 us) at a.nim(4) needs a timer, and the STM32L475's two are taken`. Neither does a period the timer cannot count. Without a timer, a task keeps a steady rate with `for turn in every(10.ms)`: each turn waits for its time counted from the first, so the rate does not drift, and a turn that would start late is skipped, its number with it. **Verified** on both boards (Appendices A and D): a 1 ms and a 250 ms event together, each counting what it should over 500 ms.
 
 A second handler for the same source is a compile error, which names the lines of both. So is starting anything that is not a `{.task.}` or `{.interrupt.}` proc, and calling one as a proc. A variable a handler shares with the rest of the program has to be declared `{.volatile.}`. Events joined by `|` share one handler. A pin's events are `rising`, `falling` and `changing`.
 
@@ -524,7 +524,7 @@ State of Lutra against this table, on the ESP32-C3:
 
 | Tier | Verified | Not written |
 |---|---|---|
-| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
+| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
 | Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
 | Timing and analog | Addressable LED | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
@@ -533,7 +533,7 @@ And on the STM32L475, which has what M4's exit needed:
 
 | Tier | Verified | Not written |
 |---|---|---|
-| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, critical sections, console, a fault report | Receive through an interrupt, a second UART, a panic handler, reset reason, sleep, a watchdog |
+| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, a fault report | Receive through an interrupt, a second UART, a panic handler, reset reason, sleep, a watchdog |
 | Buses | I2C controller | SPI, DMA, I2C target |
 | Timing and analog | | PWM, ADC, pulse capture |
 | TinyML inputs | | Hardware RNG, which wants a 48 MHz clock started for it; I2S; raw flash storage |
@@ -854,48 +854,53 @@ Left over:
 
 ### M5: Tasking and connectivity
 
-Begun October 2026.
+Begun October 2026, on the branch `feature/tasks`.
 
 - Context primitive, cooperative tasks, the wait hook.
 - AT engine, sockets, MQTT, LoRa driver, settings store.
 - Sampling pipeline and data capture, carried over from M3 and designed against the gesture demo's model.
 - **Exit:** a gesture-recognition demo publishing over MQTT, and an anomaly-detection demo sending a LoRa packet.
 
-**Decided**, at the start:
+**Decided:**
 
-- Tasks come first. They need no new hardware, and the AT engine and sampling build on them.
-- The gesture model is a public one, such as TensorFlow's `magic_wand`, with its own data, rather than one trained here. Steady has no gesture model yet.
-- Wi-Fi, for MQTT, is the author's second DevKitM-1 running Espressif's AT firmware. LoRa is an RFM95W, an SX1276 at 915 MHz, which is not yet soldered.
-- How a task is written and waits (§5.5). The author chose `wait cond` over `waitUntil cond`, and asked for timeouts and the overflow report in the first piece.
+- Tasks came first: they needed no new hardware, and the rest builds on them. The author chose `wait cond` over `waitUntil cond`, and asked for timeouts and the overflow report in the first piece.
+- Tasks and interrupt handlers are procs with a pragma, started by `start`, rather than the blocks they were first (§5.5). The author wants Lutra to read as ordinary Nim, and mistakes to be compile errors.
+- The gesture demo waits, perhaps to become a demo of Steady's. Of what it needs, a fixed rate, data capture and a window of samples are Lutra's; the model, and the preprocessing that suits it, are the demo's. When it comes back, the model is a public one, such as TensorFlow's `magic_wand`, rather than one trained here.
+- So M5 does the plumbing first: timing, then data capture (both done), then raw flash storage and the settings store, then connectivity.
+- Timer events were asked for now, rather than when something needs them (§5.5).
+- Wi-Fi, for MQTT, is the author's second DevKitM-1 running Espressif's AT firmware, unless the B-L475E-IOT01A's own module serves (below). LoRa is an RFM95W, an SX1276 at 915 MHz, not yet soldered.
 
-**Decided** after tasks: the gesture demo waits, perhaps to become a demo of Steady's. Of what it needs, the fixed rate, data capture and the window are Lutra's, and the model and the preprocessing that suits it are the demo's. M5 does the plumbing first: timing (`every`, as a loop and as timer events, both asked for now), data capture, then raw flash storage and the settings store.
+**Verified**, on both boards, with every check in §1.2 passing after each:
 
-**Verified**: tasks, on both boards (§5.5). Every check in §1.2 passes after them.
+| Piece | Where |
+|---|---|
+| Tasks: `{.task.}`, `start`, `wait`, `wait(cond, within = ...)`, the overflow report | §5.5, the self-checks, `tasks.nim` in `examples/` |
+| Handlers as `{.interrupt: ...}` procs, events joined by `\|` | §5.5, the self-checks, `button.nim` in `examples/` |
+| Timer events, `{.interrupt: every(1.ms).}` | §5.5, the self-checks |
+| A drift-free loop, `for turn in every(10.ms)`, which skips turns it would start late | The self-checks |
+| Data capture: `console.record(...)` and `nim capture` | §8.2, `record.nim` in `examples/`, `tests/trecords.nim` |
 
 Found along the way, and fixed:
 
-- The self-check's pin test read a pin straight after setting it, and on the STM32L475 that read gives the old level almost every time (Appendix D). It passed only because the compiler happened to put other loads between. It now waits a microsecond, on both boards.
-- A task declared inside a procedure never ran: the scheduler's hook, declared by the first task, was left out (Appendix B).
-- Tasks and handlers became procs with a pragma (§5.5), at the author's asking. **Verified**: both self-checks, the examples, a handler for two pins' events on the STM32L475, a task exported from another module, and the compile errors for two handlers on one source, for a task with parameters, for starting a plain proc and for calling a task.
-
-Found along the way while capturing, and fixed:
-
+- **The self-check's pin test read a pin straight after setting it.** On the STM32L475 that read gives the old level almost every time (Appendix D); it passed only because the compiler happened to put other loads between. It now waits a microsecond, on both boards.
+- **A task declared inside a procedure never ran.** The scheduler's hook, which the first task declares, was left out (Appendix B).
 - **`pyocd reset` stopped the board's core for a third of a second**, about 5 s into a reset that took 5.75 s. A capture showed it as 37 missing turns. A reset by the chip's reset pin, `pyocd reset -m hw`, takes 0.8 s and stops nothing, and every task now uses it.
 - **Changing a UART's rate under bytes still going out garbles them**, and a receiver can take several more to find its feet. The C3's boot ROM leaves its last line in the FIFO, so a program that went to 921600 baud at once lost its first five records, names included. `setBaud` now lets the FIFO and its last byte go first.
+- **Every timer event on the STM32L475 fired once as it started**, until the timer was told that only coming round counts (Appendix D).
 
 Of Steady's models, `ad` is MLPerf Tiny's machine-sound autoencoder, 640 inputs from five frames of 128 log-mel bands. The battery anomaly demo would need a different model, or a microphone and the sound of a machine.
 
-What is left, and what it needs of the author:
+What is left, in the order planned, and what each needs of the author:
 
 | Piece | Needs |
 |---|---|
-| A window of samples, handed to a model | Nothing new, but best designed with a model in hand |
-| Raw flash storage, then the settings store | Nothing new |
+| Raw flash storage on both chips, then the settings store | Nothing new. How settings are written is still to put to the author (§1.2) |
 | Wi-Fi on the B-L475E-IOT01A itself | ST's list for the board, not yet checked against the board, has an Inventek ISM43362 module, driven by AT-style commands over SPI. It might serve MQTT with no second board |
 | The B-L475E-IOT01A's two MP34DT01 microphones, from the same list | The chip's DFSDM. They would serve keyword spotting from a microphone, and `ad` |
-| AT engine, sockets, MQTT | The second DevKitM-1 plugged in, which the author will do once work on the B-L475E-IOT01A is done, as he has two cables. Then flashed with Espressif's AT firmware, whose state for the C3 is still unchecked (§9), and a broker to publish to |
+| AT engine, sockets, MQTT | Unless the module above serves: the second DevKitM-1 plugged in, which the author will do once work on the B-L475E-IOT01A is done, as he has two cables; flashed with Espressif's AT firmware, whose state for the C3 is unchecked (§9); and a broker to publish to |
 | LoRa driver | The RFM95W soldered and wired, which the author will do only once it is needed, and a second radio or a gateway to hear it |
-| Anomaly demo | A model for it (above) |
+| A window of samples, handed to a model | Nothing new, but best designed with a model in hand |
+| The demos | Models for them (above) |
 
 A first serious public release is M0 through M5.
 
@@ -923,7 +928,7 @@ Three use models Steady already runs on the C3.
 
 **Known gaps, none blocking:**
 
-- The B-L475E-IOT01A has less than the DevKitM-1 (§7), and its clock is uncorrected (§11, M4).
+- The B-L475E-IOT01A has less than the DevKitM-1 (§7), and its clock is uncorrected (§11, M4), so its time and timer events run 0.18% fast.
 - Building for one board and then the other in the same folder writes the same files in `build/`, so the second build starts again from nothing.
 - Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
 - Nothing checks that `i2c0.init` frees a sensor cut off mid-read by a reset. It was tried by hand, with a program that read without pause and was reset 16 times.
@@ -1116,7 +1121,7 @@ proc start() {.exportc: "_start",
 - **`--skipProjCfg` builds for the host from a folder whose `config.nims` selects a board.** `nim keywords` uses it to build one source file both ways. That file tells them apart with `when defined(lutraBoard)`.
 - **A module cannot import another of its own name**, wherever the other is. `checks/keywords.nim` is not `kws.nim` because Steady's generated module is.
 - **Code at the top level of a module costs an error check.** With `--exceptions:goto` each module's own code ends by testing Nim's error flag, and that test keeps `exit` in the link. A program's main module loses it when it ends in a loop, as unreachable. A board's module that set its console up at the top level did not, and with the C library that ships for ARM `exit` brought 1 KB of RAM and 1.4 KB of flash into every program. Hence `lutraBoardStart`, a procedure the startup code calls.
-- **A procedure declared in a template is visible to the next use of that template**, unlike a variable. Two `pin.onRising:` blocks in one program were a "redefinition of 'handler'". Mark such a procedure `{.gensym.}`.
+- **A procedure declared in a template is visible to the next use of that template**, unlike a variable. Two pin handlers in one program, written as blocks as they were then, were a "redefinition of 'handler'". Mark such a procedure `{.gensym.}`.
 - **A name a macro makes up is looked for where the macro is expanded, and inside a procedure with a `static` parameter that is the caller's module.** `sink.write "Fault: "` in the architecture layer failed with "undeclared identifier: 'put'" when a board's module instantiated it, because `write` builds calls to `put` by name. The fault report calls `put` itself.
 - **A literal passed to a template's `uint32` parameter is still a literal.** `value shl 30` with 2 for `value` was worked out as an `int`, which is 32 bits on the target, and did not fit. Convert it in the template.
 
@@ -1147,7 +1152,7 @@ timeout 5 cat /dev/ttyUSB0
 - The Speech Commands test set is unpacked in `checks/build/keywords/`, 150 MB, so `nim keywords` does not download it again. Deleting `checks/build` brings the download back.
 - The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3). The other DevKitM-1 was unplugged on 13 October, so `nim wiring` and `nim link` want it plugged in again, and with one board attached no port needs naming.
 - Adafruit's design files for the sensor board, which settled what its pins join, are at `github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`.
-- The B-L475E-IOT01A is attached by its ST-LINK's USB socket and appears as `/dev/ttyACM0`. With it and one DevKitM-1 attached, no port needs naming for either.
+- The B-L475E-IOT01A is attached by its ST-LINK's USB socket and appears as `/dev/ttyACM0`. With it and one DevKitM-1 attached, no port needs naming for either. As of 14 October those two are what is plugged in: the DevKitM-1 with the sensor board, MAC `7c:df:a1:59:c9:70`. The author has two USB cables, so the second DevKitM-1 waits for its turn.
 - `pyocd` 0.45.1: `~/Documents/GitHub/Steady/.venv/bin/pyocd`, beside `esptool`. Not on `PATH`, so `export PYOCD=~/Documents/GitHub/Steady/.venv/bin/pyocd`. It reaches the probe without `sudo`; Steady's `tests/mcu/boards/stm32l475/board.sh` has the udev rule that allows that.
 - The ARM compiler is Ubuntu's `arm-none-eabi-gcc` 10.3.1, on `PATH`, with its `newlib`.
 - `pyocd commander -t stm32l475xg -c halt -c "reg pc" -c "read32 0x40021000 16" -c go` reads the chip's registers while a program runs, which is how the first silent console was explained.

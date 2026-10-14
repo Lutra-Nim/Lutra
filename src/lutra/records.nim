@@ -54,7 +54,8 @@ macro record*(link: untyped, values: varargs[untyped]): untyped =
   for value in values:
     let (name, expression) =
       if value.kind == nnkExprEqExpr: (value[0].strVal, value[1]) else: (value.repr, value)
-    names.add name
+    # As CSV wants a name with a comma in it, such as `max(a, b)`
+    names.add(if ',' in name or '"' in name: '"' & name.replace("\"", "\"\"") & '"' else: name)
     puts.add quote do: `putVarint`(`buffer`, `at`, int64(`expression`))
   var header = @[newLit(namesKind)]
   for c in names.join(","): header.add newLit(byte(c))

@@ -3,9 +3,9 @@
 
 Lutra is a hardware abstraction layer and library ecosystem in pure Nim, RISC-V first. It is a spiritual successor to [Ratel](https://github.com/PMunch/ratel) and the board layer underneath [Steady](https://github.com/garrettkinman/Steady).
 
-The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, a cycle counter, tasks that take turns and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
+The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, timer events, a cycle counter, tasks that take turns, records for capturing data on the host, and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
 
-ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, a console, I2C, time, a cycle counter, tasks and a report of faults. The same self-check, sensor driver and benchmark run on it.
+ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, a console, I2C, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it.
 
 ## A first program
 
@@ -47,7 +47,7 @@ proc pressed() {.interrupt: bootButton.falling.} =
 start pressed
 ```
 
-So is a task. Tasks take turns with the program, each running until it waits:
+A task is a proc too, started the same way. Tasks take turns with the program, each running until it waits:
 
 ```nim
 proc blink() {.task.} =
@@ -69,6 +69,8 @@ for turn in every(10.ms):       # Waits for each turn, letting other tasks run
 
 proc tick() {.interrupt: every(1.ms).} =
   inc ticks
+
+start tick
 ```
 
 Wiring mistakes stop the build. Using one pin for two things, here the console's transmit pin as an output, gives:
