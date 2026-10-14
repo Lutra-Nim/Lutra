@@ -43,7 +43,7 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it and no more; §7 sets the two side by side. Sampling and data capture were moved to M5, where the gesture demo will say what shape they should have.
 
-Where to pick up: put to the author the questions M4 left (§11, M4, "Left over"), then M5, asking them what comes first in it. M4 is on the branch `feature/m4-cortex-m`. M3 is merged into `main` on the author's machine.
+Where to pick up: M5. Ask the author what comes first in it, and whether to merge M4 into `main` first. M4 is on the branch `feature/m4-cortex-m`. `main` has M3 on the author's machine, and on GitHub still ends at M2.
 
 What exists, all exercised on hardware:
 
@@ -746,6 +746,7 @@ Done, October 2026.
 - The port has what the exit needs and no more (§7).
 - A fault gets a short report of Lutra's own (§5.5).
 - The board's name in `config.nims` is `b_l475e_iot01a`, ST's name for it as printed.
+- `examples/` has a folder for each board, each with its own `config.nims`, so that every example is true to its board's hardware and runs with no option. Sharing names such as `led` and `button` between boards was the alternative, and the DevKitM-1 has no plain LED of its own to give the name to. `hello.nim` is in both folders, and `blink.nim` and `button.nim` are near-copies. The DevKitM-1's `button.nim` now steps its own LED through red, green and blue, so neither board's examples need anything wired but the DevKitM-1's `blink.nim`. **Verified:** all seven build, and the author has seen the DevKitM-1's button change its LED's colour.
 
 **Verified** on the board, with ST-LINK serial `066CFF3736324D5043223947`:
 
@@ -775,14 +776,13 @@ What changed outside the new architecture, chip and board:
 - **An ST-LINK keeps what a board printed until the port is opened.** The self-check's first lines arrived twice, once from before the reset.
 - **`print` works its arguments out as it goes.** A time taken in a later argument includes printing the earlier ones, which made a 110 µs transaction look like 1.4 ms. True on the C3 too.
 
-Left over, the first two for the author to settle:
+Left over:
 
-1. **Examples.** **Decided:** `examples/` has a folder for each board, each with its own `config.nims`, so that every example is true to its board's hardware and is run with no option. Sharing names such as `led` and `button` between boards was the alternative, and the DevKitM-1 has no plain LED of its own to give the name to. `hello.nim` is in both folders, and `blink.nim` and `button.nim` are near-copies. **Verified:** all seven build.
-2. **What the two chips' host sides repeat.** Each `host.nim` has its own copy of reading a linked file's sections, naming a linker script after its contents and printing sizes, about twenty lines, and each `memory.nim` its own `KB` and `MB`. Left alone until a third chip shows what is really common.
-3. **Nobody has looked at the board.** `led2` is driven by Steady's benchmark and read back by a test, and `userButton` reads high when not pressed. `led1` on PA5 is from ST's manual, from memory. Neither LED has been seen lit and the button has not been pressed.
-4. **The other five of Steady's models**, on either board (§10).
-5. **Tasking on a Cortex-M** (§5.5).
-6. **Floating point.** The chip has a floating-point unit, which is left off: programs are built for software floating point, as Steady builds for this chip.
+1. **What the two chips' host sides repeat.** Each `host.nim` has its own copy of reading a linked file's sections, naming a linker script after its contents and printing sizes, about twenty lines, and each `memory.nim` its own `KB` and `MB`. Left alone until a third chip shows what is really common. The author has not said.
+2. **Nobody has looked at the board.** `led2` is driven by Steady's benchmark and read back by a test, and `userButton` reads high when not pressed. `led1` on PA5 is from ST's manual, from memory. Neither LED has been seen lit and the button has not been pressed.
+3. **The other five of Steady's models**, on either board (§10).
+4. **Tasking on a Cortex-M** (§5.5).
+5. **Floating point.** The chip has a floating-point unit, which is left off: programs are built for software floating point, as Steady builds for this chip.
 
 ### M5: Tasking and connectivity
 

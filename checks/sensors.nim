@@ -9,7 +9,7 @@
 ## The B-L475E-IOT01A carries a LIS3MDL of its own, at that part's other
 ## address, and nothing the accelerometer's driver knows.
 
-import lutra, lutra_lsm6ds33, lutra_lis3mdl
+import lutra, lutra_lis3mdl
 
 when declared(i2c2):
   const
@@ -17,6 +17,7 @@ when declared(i2c2):
     compass = lis3mdl(bus, address = 0x1E)
   bus.init(sda = PB11, scl = PB10)
 else:
+  import lutra_lsm6ds33
   const
     bus = i2c0
     imu = lsm6ds33(bus)
@@ -46,8 +47,12 @@ block:
 
 block:
   var
-    acceleration, field: tuple[x, y, z: int32]
-    (accelerations, fields) = (0, 0)
+    field: tuple[x, y, z: int32]
+    fields = 0
+  when declared(imu):
+    var
+      acceleration: tuple[x, y, z: int32]
+      accelerations = 0
   let start = millis()
   while millis() - start < 3000:
     when declared(imu):
