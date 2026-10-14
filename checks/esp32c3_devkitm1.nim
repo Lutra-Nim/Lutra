@@ -52,12 +52,16 @@ block:
   check "millis", uint32(millis() - start), 250
 
 proc checkPin(pin: static Pin) =
+  # A pin's level reaches `read` a few cycles after it changes
   pin.output()
   pin.high()
+  delay 1.us
   let readHigh = pin.read()
   pin.low()
+  delay 1.us
   let readLow = pin.read()
   pin.toggle()
+  delay 1.us
   check "gpio output", readHigh and not readLow and pin.read()
 
   pin.input()
@@ -78,6 +82,7 @@ IO4.output()
 IO4.low()
 IO4.onRising:
   inc edges
+  idle() # Which has to do nothing here, as is checked with tasks below
 
 block:
   var kept = true
@@ -138,6 +143,70 @@ block:
     bits = (bits shl 1) or (if edges[2 * bit + 1] - edges[2 * bit] > cpuHz div 2_000_000: 1 else: 0)
   check "led pulses", count == edges.len and bits == 0x0FA581 # Green goes first
   rgbLed.off()
+
+# Tasks take turns in the order they were started, each until it waits, and
+# one that ends leaves the line
+var
+  order: array[9, char]
+  noted: int
+
+proc note(c: char) =
+  order[noted] = c
+  inc noted
+
+task first:
+  for _ in 1..3:
+    note 'a'
+    idle()
+
+task second:
+  for _ in 1..2:
+    note 'b'
+    idle()
+
+for _ in 1..4:
+  note 'p'
+  idle()
+check "tasks", order == ['p', 'a', 'b', 'p', 'a', 'b', 'p', 'a', 'p']
+
+var
+  turns {.volatile.}: uint32
+  ticks: uint32
+  raised: bool
+
+task spinner:
+  while true:
+    inc turns
+    idle()
+
+task ticker:
+  while true:
+    delay 10.ms
+    inc ticks
+
+task raiser:
+  delay 20.ms
+  raised = true
+
+block:
+  let start = ticks
+  delay 100.ms
+  check "tasks delay", ticks - start in 9'u32..10'u32
+
+block:
+  let met = wait(raised, within = 100.ms)
+  let start = millis()
+  let missed = not wait(false, within = 10.ms)
+  check "tasks wait", met and missed and millis() - start in 10'u64..11'u64
+
+# The handler waits, and must not hand over from inside the interrupt. The
+# program spins rather than waits for it, so that only the handler could.
+block:
+  let (before, edgesBefore) = (turns, edges)
+  IO4.high()
+  IO4.low()
+  while edges == edgesBefore: discard
+  check "tasks in handler", turns == before
 
 # Long enough for any watchdog left running to bite, which would start again
 # from the top

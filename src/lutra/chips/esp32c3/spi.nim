@@ -1,4 +1,4 @@
-import ../../claims
+import ../../[claims, tasks]
 import registers, peripherals, gpio
 
 template command(bus: Spi): Reg = Reg(bus.base + spiCommand)
@@ -64,7 +64,7 @@ proc transfer*(device: static SpiDeviceOn, output: openArray[byte], input: var o
   ## shorter, or empty, when what comes back is not wanted. Waits first for a
   ## device with a ready line to raise it, and afterwards for it to drop.
   when device.ready != noPin:
-    while not device.ready.read(): discard
+    wait device.ready.read()
   let bus = device.bus
   device.select.low()
   var done = 0
@@ -89,7 +89,7 @@ proc transfer*(device: static SpiDeviceOn, output: openArray[byte], input: var o
     done += count
   device.select.high()
   when device.ready != noPin:
-    while device.ready.read(): discard
+    wait not device.ready.read()
 
 # As a target the bus has to take a whole transfer however long the controller
 # makes it, so DMA moves the data: one descriptor for each direction.
@@ -175,7 +175,7 @@ proc exchange*(target: static SpiTarget, output: openArray[byte], input: var ope
     bus.command[] = start
 
     when ready != noPin: ready.high()
-    while (bus.events[] and transferDone) == 0: discard
+    wait (bus.events[] and transferDone) != 0
     when ready != noPin: ready.low()
     result = int(bus.targetLength[] and 0x3ffff) div 8
     # Chip-select dipping with no data is what the line does as a controller

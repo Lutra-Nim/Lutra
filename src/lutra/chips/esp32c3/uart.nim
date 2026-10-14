@@ -1,5 +1,5 @@
 import std/[macros, macrocache]
-import ../../[claims, containers]
+import ../../[claims, containers, tasks]
 import registers, peripherals, interrupts, gpio
 
 template fifo(uart: Uart): Reg = Reg(uart.base + uartFifo)
@@ -62,7 +62,7 @@ proc poll*(uart: static Uart): bool =
 
 proc receive*(uart: static Uart): char =
   const size = bufferSize(uart)
-  while not uart.poll: discard
+  wait uart.poll
   when size > 0: uart.ring(size)[].pop
   else: char(uart.fifo[] and 0xff)
 

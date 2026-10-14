@@ -9,7 +9,7 @@ when defined(nimscript):
   import stm32l475/host
   export host
 else:
-  import ../arch/armv7m/[interrupts, fault]
+  import ../arch/armv7m/[interrupts, fault, context]
   import stm32l475/[startup, gpio, uart, i2c, clock]
   export gpio except asFunction, drive, openDrain, pinInterrupt
   export uart, i2c, clock.cpuHz, clock.cycles, clock.micros, interrupts.critical, fault.reportFaults
