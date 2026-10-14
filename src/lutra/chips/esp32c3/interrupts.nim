@@ -13,6 +13,7 @@ type Source* = tuple[number, line: int]
 const
   gpioSource*: Source = (16, 1)
   uartSources*: array[2, Source] = [(21, 2), (22, 3)]
+  alarmSources*: array[3, Source] = [(37, 4), (38, 5), (39, 6)] # The system timer's
 
 # Lines nobody handles are left out of the link, as null entries
 {.emit: block:

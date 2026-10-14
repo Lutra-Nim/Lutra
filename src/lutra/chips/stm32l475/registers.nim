@@ -66,3 +66,12 @@ const
   timerControl2* = 0x04'u32
   timerFollow* = 0x08'u32
   timerCount* = 0x24'u32
+
+  # Timers 6 and 7, which only count, for timer events
+  timer6* = 0x4000_1000'u32
+  timer7* = 0x4000_1400'u32
+  timerInterrupts* = 0x0C'u32
+  timerStatus* = 0x10'u32
+  timerUpdate* = 0x14'u32
+  timerPrescale* = 0x28'u32
+  timerReload* = 0x2C'u32

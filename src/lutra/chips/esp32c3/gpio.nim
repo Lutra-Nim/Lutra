@@ -120,6 +120,6 @@ template attach*(event: static PinEvent, where: static string, handler: untyped)
   proc entry() {.gensym, exportc: "lutra_gpio_" & $event.pin.num, cdecl.} = handler()
   discard cast[pointer](entry) # Inside a procedure, Nim leaves out one nothing refers to
 
-template arm*(event: static PinEvent) =
+template arm*(event: static PinEvent, where: static string) =
   Reg(gpioPin + 4 * event.pin.num.uint32)[] = (event.edge.uint32 shl 7) or (1 shl 13)
   enable(gpioSource)

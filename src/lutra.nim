@@ -1,12 +1,12 @@
 ## Lutra, a Nim-only bare-metal stack for TinyML microcontrollers.
 ##
 ## `import lutra` gives the board selected in the project's `config.nims`: its
-## pins and peripherals, and printing, time and tasks on top of them.
+## pins and peripherals, and printing, time, tasks and records on top of them.
 
 import std/[macros, strutils]
-import lutra/[fmt, time, tasks, claims]
+import lutra/[fmt, time, tasks, claims, records]
 import lutra/hal/[pin, bytelink, i2c, spi]
-export fmt, time, pin, bytelink, i2c, spi
+export fmt, time, records, pin, bytelink, i2c, spi
 export tasks.wait, tasks.idle
 
 const lutraBoard {.strdefine.} = ""
@@ -33,6 +33,18 @@ proc delay*(duration: Duration) =
   ## Lets the other tasks run for `duration`
   let start = micros()
   wait micros() - start >= duration.uint64
+
+iterator every*(period: Duration): uint64 =
+  ## Turns of a loop, one each `period`, numbered from 0. Each waits for its
+  ## time, letting the other tasks run. A turn that would start late is
+  ## skipped, and its number with it.
+  let start = micros()
+  var turn = 0'u64
+  while true:
+    yield turn
+    turn = max(turn + 1, (micros() - start) div period.uint64 + 1)
+    let due = start + turn * period.uint64
+    wait micros() >= due
 
 template wait*(condition: untyped, within: Duration): bool =
   ## Lets the other tasks run until `condition` holds, or until `within` has
@@ -99,6 +111,7 @@ macro interrupt*(on, p: untyped): untyped =
   ## Makes a proc the handler of an event, or of several joined by `|`:
   ##
   ##   proc pressed() {.interrupt: bootButton.falling.} = ...
+  ##   proc tick() {.interrupt: every(10.ms).} = ...
   ##
   ## `start pressed` switches it on. Its waits never hand over to a task.
   let
@@ -113,7 +126,7 @@ macro interrupt*(on, p: untyped): untyped =
     proc `handler`() {.inline.} = `body`
   for event in events(on):
     result.add newCall(bindSym"attach", event, where, handler)
-    arms.add newCall(bindSym"arm", event)
+    arms.add newCall(bindSym"arm", event, where)
   result.add quote do:
     type `kind` = object
     const `exported` = `kind`()

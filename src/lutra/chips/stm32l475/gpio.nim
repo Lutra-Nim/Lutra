@@ -103,7 +103,7 @@ template attach*(event: static PinEvent, where: static string, handler: untyped)
       pinInterrupt(lines)
     discard cast[pointer](shared)
 
-template arm*(event: static PinEvent) =
+template arm*(event: static PinEvent, where: static string) =
   const pin = event.pin
   switchOn(apb2Clocks, 0) # Of the register that picks the port
   let source = Reg(pinInterruptPorts + 4 * uint32(pin.num div 4))

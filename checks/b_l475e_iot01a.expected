@@ -14,5 +14,7 @@ tasks ok
 tasks delay ok
 tasks wait ok
 tasks in handler ok
+timer ok
+every ok
 idle ok
 Fault: undefined instruction at 0x08

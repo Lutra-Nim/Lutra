@@ -218,6 +218,31 @@ block:
   while edges == edgesBefore: discard
   check "tasks in handler", turns == before
 
+# A timer event comes as often as asked, and so does a turn of `every`, which
+# skips the turns it would start late
+var ticked {.volatile.}: uint32
+
+proc tick() {.interrupt: every(1.ms).} =
+  inc ticked
+
+block:
+  start tick
+  let before = ticked
+  delay 100.ms
+  check "timer", ticked - before, 100
+
+block:
+  var
+    turns: array[4, uint64]
+    taken = 0
+  let began = millis()
+  for turn in every(10.ms):
+    if taken == 1: delay 25.ms # Too late for turns 2 and 3
+    turns[taken] = turn
+    inc taken
+    if taken == turns.len: break
+  check "every", turns == [0'u64, 1, 4, 5] and millis() - began in 50'u64..51'u64
+
 # Long enough for any watchdog left running to bite, which would start again
 # from the top
 delay 30.sec

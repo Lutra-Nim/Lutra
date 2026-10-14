@@ -41,7 +41,7 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 ### 1.2 Where things stand
 
-Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks; §7 sets the two side by side. M5 is under way: tasks are done on both boards (§5.5).
+Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks are done on both boards (§5.5).
 
 Where to pick up: M5, whose plan and order are in §11. The next piece is up to the author; §11 lists what is left and what each needs of him.
 
@@ -55,11 +55,11 @@ What exists, all exercised on hardware:
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
 | I2C | Controller, on any pins. Reads and writes verified against a real sensor |
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
-| Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections |
-| Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, and a report of a task's stack overflowing (§5.5) |
-| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
+| Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections, and timer events as `{.interrupt: every(10.ms).}` procs |
+| Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, a drift-free `for turn in every(10.ms)`, and a report of a task's stack overflowing (§5.5) |
+| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Beside this repository | Two driver packages, both verified on the real chips: `lutra_lsm6ds33`, for an accelerometer and gyroscope, and `lutra_lis3mdl`, for a magnetometer. Each is a repository of its own (§8) |
-| Host side | `build`, `flash`, `monitor`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
+| Host side | `build`, `flash`, `monitor`, `capture`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
 
 On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1, I2C, time, the cycle counter, `critical:` sections, tasks and a fault report of Lutra's own (§5.5). `hello.nim` is the same program in both boards' folders of `examples/`.
 
@@ -68,15 +68,16 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 | Run | From | Proves |
 |---|---|---|
 | `nim r` on each `tests/t*.nim` | `tests/` | Formatting, framing, the ring buffer, claims, the memory layout, the arithmetic and the front-end, on the host |
-| `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, I2C with nothing on it, the LED's pulses, tasks, no watchdog, the fault report. Takes 45 s |
+| `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, I2C with nothing on it, the LED's pulses, tasks, timer events, no watchdog, the fault report. Takes 45 s |
 | `nim steady` | `checks/` | Steady's `kws` gives checksum `ab2fdbf1` |
 | `nim echo` | `checks/` | 64 KB at 921600 baud comes back intact, polled and buffered |
 | `nim wiring`, then `nim link` | `checks/` | Two wired boards exchange 200 buffers over UART1 and 200 over SPI |
 | `nim keywords` | `checks/` | Twelve recorded words are recognised on the board, from features that match the host's bit for bit. The first run downloads 112 MB of recordings |
 | `nim sensors` | `checks/` | With the sensor board on IO18 and IO19, lying still: both chips answer through their drivers at the rates asked for, gravity is 1 g, and a refused transaction does not spoil the next |
-| `nim -d:board=b_l475e_iot01a selfcheck` | `checks/` | The other board: its clock against its crystal, time, pins, interrupts, flash, I2C, tasks, no watchdog, the fault report. Takes 45 s |
+| `nim -d:board=b_l475e_iot01a selfcheck` | `checks/` | The other board: its clock against its crystal, time, pins, interrupts, flash, I2C, tasks, timer events, no watchdog, the fault report. Takes 45 s |
 | `nim -d:board=b_l475e_iot01a sensors` | `checks/` | That board's own LIS3MDL answers through the same driver, at the rate asked for, and a refused transaction does not spoil the next |
 | `nim -d:board=b_l475e_iot01a steady` | `checks/` | Steady's `kws` gives `ab2fdbf1` there too |
+| `nim flash record.nim`, then `nim capture > button.csv` | `examples/` of either board | The CSV has its header, then turns from 0 with none missing |
 | `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 
 Conventions the code follows:
@@ -177,7 +178,8 @@ lutra/
     boards/b_l475e_iot01a.nim
     hal/                     the interfaces: pin, bytelink, i2c, spi
     reg, claims              registers and compile-time ownership
-    fmt, time, tasks, containers, framing, fixed, signal        libraries (§8)
+    fmt, time, tasks, records, containers, framing, fixed, signal        libraries (§8)
+    capture.nim              the host's side of records, built and run by `nim capture`
   checks/                    hardware checks, with their tasks in config.nims
   examples/                  a folder for each board, with its own config.nims
   tests/                     host-side tests
@@ -202,6 +204,7 @@ Commands every board provides, run as `nim <command> [program.nim]`:
 | `build` | Compile, link and check the image (§5.7). Plain `nim c` skips the checks |
 | `flash` | Build, package the image and program the board |
 | `monitor` | Read the console, with a reset option |
+| `capture` | Reset the board and write its records as CSV to stdout, and everything else it says to stderr (§8.2) |
 | `size` | Build, and show per-region sizes against the board's budgets |
 | `selfcheck` | Build, flash and run the board's self-check, and compare the output |
 
@@ -310,6 +313,8 @@ proc either() {.interrupt: IO4.rising | IO5.falling.} =
 
 start pressed
 ```
+
+A timer is an event too: `proc tick() {.interrupt: every(10.ms).}` takes the next free hardware timer, and a program that wants more than the chip has does not compile: `every(3000 us) at a.nim(4) needs a timer, and the STM32L475's two are taken`. Neither does a period the timer cannot count. **Verified** on both boards (Appendices A and D): a 1 ms and a 250 ms event together, each counting what it should over 500 ms.
 
 A second handler for the same source is a compile error, which names the lines of both. So is starting anything that is not a `{.task.}` or `{.interrupt.}` proc, and calling one as a proc. A variable a handler shares with the rest of the program has to be declared `{.volatile.}`. Events joined by `|` share one handler. A pin's events are `rising`, `falling` and `changing`.
 
@@ -550,7 +555,7 @@ And on the STM32L475, which has what M4's exit needed:
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing (`fmt`), durations (`time`), tasks (`tasks`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`) and the audio front-end (`signal`).
+Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`) and the audio front-end (`signal`).
 
 ### 8.1 Core
 
@@ -558,7 +563,7 @@ Written so far: printing (`fmt`), durations (`time`), tasks (`tasks`), a ring bu
 |---|---|---|
 | Printing and logging | Allocation-free formatting of integers, hex and fixed-point; log levels | Every program needs output and there is no heap by default. Steady's benchmark hand-rolls this today |
 | Fixed-size containers | Ring buffer, queue, bounded string; safe between an interrupt and main code | UART receive, AT commands, sensor streams |
-| Time | Durations, deadlines, timeouts, periodic timers | Every driver and protocol waits on something |
+| Time | Durations, deadlines, timeouts, periodic timers. Durations, `wait(cond, within = ...)` and `every` are written | Every driver and protocol waits on something |
 | Fixed-point math | Q-format arithmetic; table-based `sin`, `exp`, `sqrt` | No floating-point unit on the C3 |
 | Tasking | Cooperative tasks with statically sized stacks; signals from interrupts | Lets "sample, infer, transmit" be written as straight-line code |
 
@@ -569,8 +574,26 @@ Tasking uses stackful tasks, not Nim's closure iterators. Closure iterators need
 | Library | Contents | Reason |
 |---|---|---|
 | Signal front-end | Windowing, fixed-point FFT, mel features | A model needs the same preprocessing it was trained with. The code must give bit-identical results on the host and on the device |
-| Sampling pipeline | Fixed-rate capture into windows, handed to a model | The glue from sensor to Steady |
-| Data capture | Device library and a host tool that records sensor data to files | Users need data from their own sensor before they can train |
+| Sampling pipeline | Fixed-rate capture into windows, handed to a model. The fixed rate is written, as `every`; the window is not | The glue from sensor to Steady |
+| Data capture | Device library and a host tool that records sensor data to files. **Verified** (below) | Users need data from their own sensor before they can train |
+
+**Decided**, October 2026, for data capture:
+
+```nim
+for turn in every(10.ms):
+  console.record(turn, ms = millis(), pressed = not userButton.read())
+```
+
+```
+nim capture > button.csv
+```
+
+- A record is a packet of `framing`, so it arrives whole or not at all, and the board's `print`s can go between records. `nim capture` writes records to stdout as CSV and everything else to stderr, the boot ROM's messages included.
+- Values are whole numbers or `bool`s, each a signed varint: seven small ones take about 14 bytes with the packet's own.
+- A record's columns are named in the program: a value's name if it is given one, or else its expression. The names go with the first record from each line of the program and every hundredth after, so a capture recovers from a damaged first one. Records before the first names are taken for what the board sent before it was reset, and dropped.
+- The host's side is in Lutra, as a task, because Lutra already finds the port, resets the board and decodes `framing` on the host. It is built for the host the first time it is run.
+
+**Verified**: `record.nim` in each board's `examples/` captured at 100 Hz on both boards, from turn 0 and with no turn missing; and on the C3, records of seven values at 1 kHz with the console at 921600 baud, 10,755 of them over 11 s with none missing.
 | Starter drivers | One accelerometer, one I2S microphone, one environmental sensor, the addressable LED | They power the demos and are the template for third-party drivers. The accelerometer is done first, as `lutra_lsm6ds33` (§11, M3) |
 
 ### 8.3 Connectivity
@@ -845,6 +868,8 @@ Begun October 2026.
 - Wi-Fi, for MQTT, is the author's second DevKitM-1 running Espressif's AT firmware. LoRa is an RFM95W, an SX1276 at 915 MHz, which is not yet soldered.
 - How a task is written and waits (§5.5). The author chose `wait cond` over `waitUntil cond`, and asked for timeouts and the overflow report in the first piece.
 
+**Decided** after tasks: the gesture demo waits, perhaps to become a demo of Steady's. Of what it needs, the fixed rate, data capture and the window are Lutra's, and the model and the preprocessing that suits it are the demo's. M5 does the plumbing first: timing (`every`, as a loop and as timer events, both asked for now), data capture, then raw flash storage and the settings store.
+
 **Verified**: tasks, on both boards (§5.5). Every check in §1.2 passes after them.
 
 Found along the way, and fixed:
@@ -853,14 +878,21 @@ Found along the way, and fixed:
 - A task declared inside a procedure never ran: the scheduler's hook, declared by the first task, was left out (Appendix B).
 - Tasks and handlers became procs with a pragma (§5.5), at the author's asking. **Verified**: both self-checks, the examples, a handler for two pins' events on the STM32L475, a task exported from another module, and the compile errors for two handlers on one source, for a task with parameters, for starting a plain proc and for calling a task.
 
+Found along the way while capturing, and fixed:
+
+- **`pyocd reset` stopped the board's core for a third of a second**, about 5 s into a reset that took 5.75 s. A capture showed it as 37 missing turns. A reset by the chip's reset pin, `pyocd reset -m hw`, takes 0.8 s and stops nothing, and every task now uses it.
+- **Changing a UART's rate under bytes still going out garbles them**, and a receiver can take several more to find its feet. The C3's boot ROM leaves its last line in the FIFO, so a program that went to 921600 baud at once lost its first five records, names included. `setBaud` now lets the FIFO and its last byte go first.
+
 Of Steady's models, `ad` is MLPerf Tiny's machine-sound autoencoder, 640 inputs from five frames of 128 log-mel bands. The battery anomaly demo would need a different model, or a microphone and the sound of a machine.
 
 What is left, and what it needs of the author:
 
 | Piece | Needs |
 |---|---|
-| Sampling pipeline and data capture, against `magic_wand`'s input | The sensor board, as now. The B-L475E-IOT01A's own LSM6DSL has no driver |
-| Settings store, in flash | Nothing new |
+| A window of samples, handed to a model | Nothing new, but best designed with a model in hand |
+| Raw flash storage, then the settings store | Nothing new |
+| Wi-Fi on the B-L475E-IOT01A itself | ST's list for the board, not yet checked against the board, has an Inventek ISM43362 module, driven by AT-style commands over SPI. It might serve MQTT with no second board |
+| The B-L475E-IOT01A's two MP34DT01 microphones, from the same list | The chip's DFSDM. They would serve keyword spotting from a microphone, and `ad` |
 | AT engine, sockets, MQTT | The second DevKitM-1 plugged in, which the author will do once work on the B-L475E-IOT01A is done, as he has two cables. Then flashed with Espressif's AT firmware, whose state for the C3 is still unchecked (§9), and a broker to publish to |
 | LoRa driver | The RFM95W soldered and wired, which the author will do only once it is needed, and a second radio or a gateway to hear it |
 | Anomaly demo | A model for it (above) |
@@ -977,6 +1009,7 @@ The first two come from Steady's port notes. The rest were exercised on hardware
 | GPIO | Output `0x6000_4004`, set `+0x08`, clear `+0x0C`; enable `0x6000_4020`, set `+0x24`, clear `+0x28`; input `0x6000_403C`. Per-pin output source select at `0x6000_4554 + 4n`; `0x80` means "driven by the output register" |
 | IO MUX | Per pin at `0x6000_9004 + 4n`. Bit 7 pull-down, bit 8 pull-up, bit 9 input enable, bits 14:12 function; function 1 is GPIO on every pin. With input enable set, an output pin's level can be read back |
 | System timer | Counts at 16 MHz regardless of core clock. Write bit 30 of `0x6002_3004` to latch, wait for bit 29, read high word at `0x6002_3040` and low word at `0x6002_3044`. Works without further setup |
+| System timer alarms | Three, *n* = 0 to 2, interrupt sources 37 to 39. An alarm repeats when bits 25:0 of `0x6002_3034 + 4n` hold its period in 16 MHz ticks and bit 30 is set: clear bit 24 − *n* of `0x6002_3000`, write the period, write 1 to `0x6002_3050 + 4n` to load it, set bit 30, set bit 24 − *n* again. Bit *n* of `0x6002_3064` enables its interrupt and `0x6002_306C` clears it. Added for M5 |
 
 On the DevKitM-1, IO9 is both the boot button and an input of the USB bridge's auto-download circuit. Opening or closing the serial port on the host pulls it low for about 2 µs, which an edge interrupt sees as a press. Its `button.nim` in `examples/` does not debounce, and says so.
 
@@ -1075,6 +1108,7 @@ proc start() {.exportc: "_start",
 - **A template parameter is substituted into field accesses.** With a parameter called `name`, `file.name` in the body becomes `file."the argument"`. A field named in a template is also bound to whatever has that name where the template is defined: a tuple field called `memory` was taken for the board's constant. A type declared outside the template has neither problem.
 - **A procedure declared inside another is left out unless something refers to it**, even one marked `exportc`. At the top level it is kept. A task declared inside a procedure declared the scheduler's hook, which nothing in Nim calls, so it was never generated; taking its address keeps it.
 - **A macro used as a pragma cannot have a parameter with a default**: `{.task.}` is then an "invalid pragma". Two overloads instead make Nim check the proc before either macro runs, which declares its name, so the macro's own declaration of it is a redefinition. One macro taking `varargs[untyped]` has neither problem.
+- **Inside `quote`, a name the macro has as a variable means that variable**, even when the generated code meant a constant of the same name elsewhere. Give it backticks and bind it with `bindSym`.
 - **`quote` gives back a single node when its body is one statement**, not a statement list, and what is added to it goes inside that node. Wrap it in `newStmtList`.
 - **GNU `ld` cannot place a section by its own size.** `.stacks (ORIGIN(ram) + LENGTH(ram) - SIZEOF(.stacks))` takes the size as 0 and then overflows the region.
 - **A `static` object parameter cannot size the return type.** `func table(m: static Mfcc): array[m.melBins, int32]` fails with "cannot evaluate at compile time: m". Pass the size as a `static int` of its own.
@@ -1160,6 +1194,7 @@ Everything here was exercised on hardware unless marked otherwise.
 | Peripheral | Facts |
 |---|---|
 | USART1 | Base `0x4001_3800`, to the ST-LINK on PB6 and PB7. `+0x0C` is the bus clock divided by the baud rate, 694 for 115200. `+0x00` = `0xD` enables it both ways. In `+0x1C`, bit 7 says there is room to send and bit 5 that a byte has come. Send at `+0x28`, receive at `+0x24`. Bit 12 of `+0x08`, set before it is enabled, makes a byte that arrives with the last unread replace it; without that the port stops receiving until an error flag is cleared |
+| Timers 6 and 7 | Bases `0x4000_1000` and `0x4000_1400`, 16 bits with a 16-bit prescale, clocks in bits 4 and 5 of `0x4002_1058`, interrupts 54 and 55. Prescale less one at `+0x28`, count to less one at `+0x2C`, interrupt enable at `+0x0C`, status at `+0x10`, cleared by writing 0. Writing 1 to `+0x14` takes the prescale at once, and counts as a tick unless bit 2 of `+0x00` was set first: without it, every timer event fired once as it started. Added for M5 |
 | Timers 2 and 5 | Bases `0x4000_0000` and `0x4000_0C00`, both 32 bits, counting the 80 MHz bus clock when `+0x00` = 1. Count at `+0x24`. Timer 2's `+0x04` = `0x20` tells others when it comes round, and timer 5's `+0x08` = 7 makes it count that: its first internal trigger is timer 2 |
 | I2C2 | Base `0x4000_5800`, clocked at 80 MHz. `+0x10` holds the timing: a divider less one in bits 31:28, then the data line's setup and hold in 23:20 and 19:16, and the clock's high and low times, each less one, in 15:8 and 7:0. `0x90F2_232B` is 100 kHz. `+0x00` = 1 enables it. A transfer is started by writing `+0x04`: the address in bits 7:1, bit 10 to read, a count of bytes in 23:16, bit 13 to start, and bit 25 to stop when the count is done. In `+0x18`, bit 1 asks for a byte to send (`+0x28`), bit 2 offers one received (`+0x24`), bit 4 says the device refused, bit 5 that a stop went out, which it does after a refusal too, and bit 6 that the count is done with no stop asked for. Bits 4 and 5 are cleared at `+0x1C` |
 | I2C2, on this board | Seven addresses answer: 0x1E (the LIS3MDL, whose identity register reads `0x3D`), 0x29, 0x2D, 0x56, 0x5D (`0xB1`), 0x5F (`0xBC`) and 0x6A (`0x6A`, an LSM6DSL, which `lutra_lsm6ds33` does not know) |
@@ -1169,7 +1204,7 @@ Everything here was exercised on hardware unless marked otherwise.
 
 - Compiler flags: `-mcpu=cortex-m4 -mthumb -mfloat-abi=soft -ffunction-sections -fdata-sections`. Nim flags as for the C3, with `--cpu:arm`.
 - Linker flags: `-nostartfiles --specs=nosys.specs -Wl,--gc-sections` and the linker script. The stubs are there because Nim's runtime refers to `exit`, which this C library builds on `_exit`. None is linked into hello world.
-- `pyocd flash -t stm32l475xg app.elf` programs the linked file as it is and starts it. `pyocd reset -t stm32l475xg` resets it, and takes a second or so over it.
+- `pyocd flash -t stm32l475xg app.elf` programs the linked file as it is and starts it. `pyocd reset -m hw -t stm32l475xg` resets it by its reset pin, in 0.8 s. Without `-m hw` it asks the core to reset itself, which took 5.75 s, and near the end the probe stopped the core for a third of a second.
 - Hello world over serial is 2812 bytes of flash and no RAM.
 
 ---

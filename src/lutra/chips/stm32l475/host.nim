@@ -69,4 +69,6 @@ proc flash*(elf: string, m: Memory, port: string) =
   exec pyocd() & " flash -t " & target & " " & quoteShell(elf)
 
 proc resetCommand*(port: string): string =
-  pyocd() & " reset -t " & target & " >/dev/null 2>&1"
+  # By the reset pin. A reset by the core's own request takes six seconds, and
+  # near the end the probe stops the core for a third of one.
+  pyocd() & " reset -m hw -t " & target & " >/dev/null 2>&1"

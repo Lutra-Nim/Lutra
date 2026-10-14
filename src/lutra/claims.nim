@@ -23,6 +23,15 @@ macro first*(what: static string): bool =
   result = newLit(what notin claims)
   if what notin claims: claims[what] = newLit("")
 
+macro slot*(pool: static string, size: static int, key, full: static string): int =
+  ## Which of `size` things in `pool` is `key`'s, the next free one the first
+  ## time. `full` is the message when none is free.
+  let taken = CacheTable("lutra.slots." & pool)
+  if key notin taken:
+    if taken.len >= size: error full
+    taken[key] = newLit(taken.len)
+  taken[key]
+
 macro claim*(resource, role: static string, where: static string = "") =
   ## `where` is the line of the user's code that made the claim, when known
   if resource notin claims:

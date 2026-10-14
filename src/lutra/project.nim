@@ -8,6 +8,7 @@
 ##   nim build hello.nim      Compile, link and check the result
 ##   nim flash hello.nim      Build, and write to the board
 ##   nim monitor              Read the board's console
+##   nim capture > data.csv   Reset the board, and write its records as CSV
 ##   nim size hello.nim       Build, and show what each memory region holds
 ##   nim selfcheck            Run the board's hardware self-check
 ##
@@ -134,6 +135,15 @@ template board*(default: static string) =
   task monitor, "Read the board's console":
     exec "sh -c " & quoteShell(console(serialPort(),
       if resetFirst: resetCommand(serialPort()) else: "true", "cat"))
+
+  task capture, "Reset the board and write its records as CSV: nim capture > data.csv":
+    # The board's records go to stdout and the rest to stderr, so nothing
+    # else may go to stdout
+    let decoder = buildDir() / "capture"
+    exec getCurrentCompilerExe() & " c --skipProjCfg --hints:off -d:release --path:" & source &
+      " --nimcache:" & buildDir() / "nimcache/capture" & " --out:" & decoder & " " &
+      source / "lutra/capture.nim" & " >&2"
+    exec "sh -c " & quoteShell(console(serialPort(), resetCommand(serialPort()), quoteShell(decoder)))
 
   task size, "Build a program and show what each memory region holds":
     build(program())
