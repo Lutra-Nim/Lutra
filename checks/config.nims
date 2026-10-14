@@ -121,3 +121,16 @@ task sensors, "Read the board's sensors through their driver packages":
   echo report
   if "FAILED" in report or "END" notin report: quit "The sensor check FAILED."
   echo "\nThe sensor check passed."
+
+task wifi, "Publish and subscribe over MQTT, through a second DevKitM-1 running Espressif's AT firmware":
+  # The package is expected checked out beside this repository, and the
+  # network in the environment, so that it is never written here
+  if not existsEnv("LUTRA_WIFI_NETWORK"): quit "Name the network in LUTRA_WIFI_NETWORK and LUTRA_WIFI_PASSWORD."
+  build(thisDir() / "wifi.nim", " --path:" & thisDir() / "../../lutra-espat/src" &
+    " " & quoteShell("-d:network=" & getEnv("LUTRA_WIFI_NETWORK")) &
+    " " & quoteShell("-d:password=" & getEnv("LUTRA_WIFI_PASSWORD")))
+  flash(elf("wifi"), memory, serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 60)
+  echo report
+  if "FAILED" in report or "END" notin report: quit "The Wi-Fi check FAILED."
+  echo "\nThe Wi-Fi check passed."

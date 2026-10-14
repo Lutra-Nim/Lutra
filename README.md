@@ -3,7 +3,7 @@
 
 Lutra is a hardware abstraction layer and library ecosystem in pure Nim, RISC-V first. It is a spiritual successor to [Ratel](https://github.com/PMunch/ratel) and the board layer underneath [Steady](https://github.com/garrettkinman/Steady).
 
-The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, timer events, a cycle counter, tasks that take turns, records for capturing data on the host, and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
+The plan is in [docs/design.md](docs/design.md). So far there are two boards. The ESP32-C3-DevKitM-1 has startup, GPIO and pin interrupts, both UARTs, I2C, SPI as controller and target, framed packets between boards, the board's RGB LED, a random number source, time, timer events, a cycle counter, tasks that take turns, records for capturing data on the host, MQTT over Wi-Fi through a second ESP32 running Espressif's AT firmware, and compile-time pin ownership. On top of those is the audio front-end a keyword-spotting model needs, in whole numbers, so that a board computes the same bits as the host. That is enough to recognise recorded words with one of Steady's models, and to run the board's hardware self-check and Steady's benchmark.
 
 ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, a console, I2C, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it.
 
@@ -73,6 +73,24 @@ proc tick() {.interrupt: every(1.ms).} =
 start tick
 ```
 
+Messages go to and from an MQTT broker through a socket, here one of a Wi-Fi module's:
+
+```nim
+import lutra, lutra/mqtt, lutra_espat
+
+const
+  wifi = espAt(uart1)
+  broker = mqtt(wifi.socket, "test.mosquitto.org")
+
+uart1.buffer(1024)
+uart1.init(tx = IO6, rx = IO7, baud = 115_200)
+if wifi.init() and wifi.join("network", "password") and broker.connect():
+  broker.subscribe("lutra/led")
+  broker.publish("lutra/up", millis(), " ms")
+  for message in broker.messages:
+    print message.topic, ": ", message.payload, "\n"
+```
+
 Wiring mistakes stop the build. Using one pin for two things, here the console's transmit pin as an output, gives:
 
 ```
@@ -92,7 +110,7 @@ Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks use 
 
 The programs in [checks/](checks) are run from that folder and are set up for the DevKitM-1. `-d:board=b_l475e_iot01a` before a command builds for the other board.
 
-Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/garrettkinman/Lutra-LSM6DS33), for an accelerometer and gyroscope, and [lutra_lis3mdl](https://github.com/garrettkinman/Lutra-LIS3MDL), for a magnetometer.
+Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/garrettkinman/Lutra-LSM6DS33), for an accelerometer and gyroscope, [lutra_lis3mdl](https://github.com/garrettkinman/Lutra-LIS3MDL), for a magnetometer, and `lutra_espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware.
 
 ## Checks
 
@@ -106,6 +124,7 @@ Run from `checks/`. With two boards of one kind attached, those for one board ne
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
 | `nim wiring` | Checks the wires between two boards, listed at the top of [checks/wiring.nim](checks/wiring.nim) |
 | `nim link` | The two boards exchange checksummed buffers over UART and SPI |
+| `nim wifi` | Publishes and subscribes through test.mosquitto.org, over Wi-Fi through a second DevKitM-1 running Espressif's AT firmware, wired as for `nim wiring`. Needs `lutra-espat` checked out beside this repository, and the network in `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD` |
 | `nim keywords` | Recognises twelve recorded words with Steady's `kws` model, and checks the board's features against the host's bit for bit. The first run downloads 112 MB of recordings. `nim -d:testset keywords` scores all 4890 on the host |
 
 The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
@@ -118,7 +137,7 @@ The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
 | `src/lutra/chips/` | What depends on the silicon: registers, clocks, memory map, peripherals |
 | `src/lutra/boards/` | What depends on the circuit board: pin names, wiring, flash size |
 | `src/lutra/hal/` | The interfaces libraries are written against |
-| `src/lutra/*.nim` | Libraries: printing, time, tasks, records, containers, framing, arithmetic in whole numbers, audio features |
+| `src/lutra/*.nim` | Libraries: printing, time, tasks, records, containers, framing, arithmetic in whole numbers, audio features, AT commands, MQTT |
 | `src/lutra/project.nim` | The host side: board selection and the tasks above. `capture.nim` is the decoder `nim capture` builds |
 | `tools/` | Empty so far; for the register generator |
 | `checks/` | Hardware checks, for one board and for two wired together |

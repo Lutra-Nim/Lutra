@@ -23,6 +23,9 @@ proc put*(link: static ByteSink, c: char) =
 proc put*(link: static ByteSink, text: cstring) =
   for c in text: link.put(c)
 
+proc put*(link: static ByteSink, text: openArray[char]) =
+  for c in text: link.put(c)
+
 proc put*(link: static ByteSink, flag: bool) =
   link.put(if flag: cstring("true") else: cstring("false"))
 
@@ -59,4 +62,4 @@ macro write*(link: untyped, args: varargs[untyped]): untyped =
   ## Writes each argument to `link` in turn
   result = newStmtList()
   for arg in args:
-    result.add newCall(ident"put", link, arg)
+    result.add newCall(bindSym("put", brOpen), link, arg)
