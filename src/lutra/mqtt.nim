@@ -36,7 +36,8 @@ type
     lastId: uint16
 
   Payload*[S] = object
-    ## Where `publish` prints to
+    ## Where `publish` prints to. Exported, with its `send`, because whether
+    ## it is a `ByteSink` is settled where `publish` is used.
     broker: Mqtt[S]
 
   Message* = object

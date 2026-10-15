@@ -43,7 +43,7 @@ Name collisions on the Nimble directory, GitHub and trademarks have not been che
 
 Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks, timer events and data capture are done on both boards (§5.5, §8.2), and MQTT over Wi-Fi on the DevKitM-1, through a second DevKitM-1 running Espressif's AT firmware (§8.3).
 
-Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi done (§11). The author took MQTT before raw flash storage, which the plan had first; the Wi-Fi network is given when a program is built, from the environment. Left in M5: raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network; the LoRa driver; and the window of samples and the demos (§11). Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. As of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
+Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi done (§11). The author took MQTT before raw flash storage, which the plan had first; the Wi-Fi network is given when a program is built, from the environment. Left in M5: raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network; the LoRa driver; and the window of samples and the demos (§11). §11 also lists what earlier milestones left that is worth going back to before a release, a panic handler first. The order proposed to the author on 14 October, still to be agreed: a panic handler, so that programs can keep Nim's checks; raw flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. As of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
 
 What exists, all exercised on hardware:
 
@@ -559,7 +559,7 @@ And on the STM32L475, which has what M4's exit needed:
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, checked out beside this repository as `lutra-espat` and not yet on GitHub, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
+Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/garrettkinman/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
 
 ### 8.1 Core
 
@@ -895,7 +895,7 @@ Left over:
 
 ### M5: Tasking and connectivity
 
-Begun October 2026. Tasks, timer events and data capture were the branch `feature/tasks`.
+Begun October 2026. Tasks, timer events and data capture were the branch `feature/tasks`, and MQTT `feature/mqtt`.
 
 - Context primitive, cooperative tasks, the wait hook.
 - AT engine, sockets, MQTT, LoRa driver, settings store.
@@ -946,6 +946,19 @@ What is left, in the order planned, and what each needs of the author:
 | LoRa driver | The RFM95W soldered and wired, which the author will do only once it is needed, and a second radio or a gateway to hear it |
 | A window of samples, handed to a model | Nothing new, but best designed with a model in hand |
 | The demos | Models for them (above) |
+
+Left by earlier milestones, and worth going back to before a release, most important first:
+
+| Gap | Why it matters |
+|---|---|
+| A panic handler | Programs are built with `-d:danger` because a failed check has nowhere to be reported (§12), so an index out of range corrupts memory silently. A handler that prints the check and the line to the console, and stops, would let programs keep Nim's checks. It is in §7's core tier |
+| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`) |
+| Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
+| A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
+| PWM and ADC | Left until something needs them (§11, M3). An Arduino user expects both early, and §7 has them as a tier of their own |
+| The B-L475E-IOT01A's missing pieces | SPI, a second UART, receiving through an interrupt and the random number source (§7). Without them it cannot run MQTT or a LoRa radio |
+| Watchdog, reset reason, sleep | In §7's core tier. Sleep is what the battery demo needs |
+| Generated register files | About sixty addresses on the C3 are hand-written, and each peripheral adds several (§12). It matters once a third chip comes |
 
 A first serious public release is M0 through M5.
 
