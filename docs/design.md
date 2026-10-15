@@ -37,13 +37,19 @@ Non-goals:
 
 **Decided: Lutra**, the otter genus. It is aquatic, like the author's other project names (Krill, Rorqual). Otters are mustelids, like the ratel. It also sounds like "LUT", a look-up table.
 
-Name collisions on the Nimble directory, GitHub and trademarks have not been checked.
+Checked 14 October 2026: no package in Nimble's list, of about 3,000, is named for or mentions Lutra, so `lutra` and `lutra_*` are free there. On GitHub the name `lutra` belongs to someone's personal account, so an organisation for Lutra needs another; `lutra-nim`, `lutra-embedded`, `lutra-mcu` and `lutra-hal` were free (§8). Trademarks have not been checked.
 
 ### 1.2 Where things stand
 
 Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks, timer events and data capture are done on both boards (§5.5, §8.2), and MQTT over Wi-Fi on the DevKitM-1, through a second DevKitM-1 running Espressif's AT firmware (§8.3).
 
-Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi done (§11). The author took MQTT before raw flash storage, which the plan had first; the Wi-Fi network is given when a program is built, from the environment. Left in M5: raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network; the LoRa driver; and the window of samples and the demos (§11). §11 also lists what earlier milestones left that is worth going back to before a release, a panic handler first. The order proposed to the author on 14 October, still to be agreed: a panic handler, so that programs can keep Nim's checks; raw flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. As of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
+Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi done (§11).
+
+- **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11). The author took MQTT before flash storage, which the plan had first.
+- **Left by earlier milestones**, and worth going back to before a release, a panic handler first: the table at the end of §11, M5.
+- **Proposed to the author on 14 October, and not yet agreed:** this order of work: a panic handler, so that programs can keep Nim's checks; flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release, from a GitHub organisation of its own and in Nimble's list of packages (§8). Also the libraries still missing (§8.1), and what would make Lutra easier for coding agents (§4.4), of which an end to `nim monitor` and an `AGENTS.md` are the cheapest.
+- **Storage in flash** is set out in §8.4: how it works on each chip, what it opens up, three layers, and littlefs not yet. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time.
+- **Hardware:** as of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
 
 What exists, all exercised on hardware:
 
@@ -221,9 +227,31 @@ The DevKitM-1 is flashed with `esptool` and the B-L475E-IOT01A with `pyocd`, thr
 
 Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time. Port names swap when boards are replugged, so the two-board checks simply take the two ports in name order.
 
-`checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `wiring` and `link`. `selfcheck` and these only work from Lutra's repository, because `checks/` is not installed with the package.
+`checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `wiring`, `link`, `sensors`, `keywords` and `wifi`. `selfcheck` and these only work from Lutra's repository, because `checks/` is not installed with the package.
 
 The tasks use `sh`, `stty` and `awk`, so they run on Linux only for now.
+
+### 4.4 Agents as users
+
+**Proposed**, October 2026, from the author's notes on making Lutra and Steady easier for coding agents to use, and not yet agreed. Agents use Lutra two ways: writing firmware on top of it, and adding boards, chips and drivers. Most of what helps them helps people too.
+
+The M5 session that added MQTT was evidence. `nim monitor` only listens and never ends, so talking to the AT module took a bridge program and a Python script, and every command was wrapped in `timeout`. With two boards attached each command needed the port named. Several of the Nim surprises in Appendix B were met again, though they were written down.
+
+Worth doing soon, most valuable first:
+
+| Item | What |
+|---|---|
+| Bounded commands | `nim monitor` with an end, as `--until <pattern>` and `--timeout <duration>`, and a way to send the board a line. Exit codes that differ, and stay the same, for a failed build, a failed check, no board found and a missing tool |
+| An `AGENTS.md` | Short, and pointing here: the commands that confirm a change, which checks need a board, and a crib of Nim on the target drawn from Appendix B. `CLAUDE.md` links to it |
+| A host board | `board "host"`, with stand-ins for `Pin`, `ByteLink` and `I2cBus` that record what happens, and a real TCP connection as its `Socket`. Examples and libraries would run on a computer, with a record to check against, so CI and agents could test without a board. Libraries are already written against the interfaces, and the host tests already use stand-ins. Running real images under Espressif's QEMU or Renode would be a second step |
+| `nim doctor` | Checks Nim, both compilers, `esptool`, `pyocd` and access to the serial ports, and says how to fix what is missing. Lutra and Steady should also want the same version of Nim |
+| `nim size --budget` | A pass or a fail against a limit, rather than numbers to read |
+
+Later: instructions for agents (skills) and templates for porting a board, adding a peripheral and writing a driver, once the interfaces stop moving; `{.deprecated: "use X".}` and a CHANGELOG from the first release; `nim pins` listing each pin's uses and claims.
+
+Not now: a code for every error with a page each, since the errors already say what and where; a `lutra` program of its own wrapping the tasks; a registry of packages with manifests and conformance checks, with three drivers; a server for the Model Context Protocol, which should wrap the commands above once they print JSON; editor tooling. Dropping `sh`, `stty` and `awk` is already a known gap (§12).
+
+The notes' items for Steady, such as checking a model for operators it lacks before generating code, belong in Steady's repository.
 
 ---
 
@@ -557,6 +585,13 @@ And on the STM32L475, which has what M4's exit needed:
 - First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/garrettkinman/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/garrettkinman/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them, in a folder named `lutra`, and `nim sensors` finds them the same way, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
 - How settled a module is belongs in its documentation, not in where it lives.
 
+**Proposed**, October 2026, for where the packages live and how they are found, and not yet agreed:
+
+1. **A GitHub organisation, soon.** For example `lutra-nim`, since `lutra` is taken (§1.1). The four repositories move to it before the first release, so that the release's links are the lasting ones: every driver and tutorial pointing at the author's own account makes moving dearer later, and GitHub's redirects do not reach Nimble's list or other people's notes. It also lets someone else keep a driver without holding the keys to Lutra, which answers part of the one-maintainer risk (§12).
+2. **Lutra installable by Nimble.** This comes before anything is listed anywhere. Nothing installs yet: the drivers find Lutra as a folder beside them (§11, M5).
+3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, such as `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first.
+4. **A directory of Lutra's own, later**: when there are a dozen packages or so, or people the author does not know are writing them. Until then the README's list of drivers serves. When it comes, it is a repository in the organisation holding an index in JSON, an entry for each package: the interfaces it needs or provides, its bus and address, the boards it was tested on, and the checks it passes. A page is made from the index, and agents read the index itself (§4.4). Nimble's list holds only a name, an address and tags.
+
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
 Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/garrettkinman/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
@@ -572,6 +607,39 @@ Written so far: printing (`fmt`), durations and the `every` of timer events (`ti
 | Tasking | Cooperative tasks with statically sized stacks; signals from interrupts | Lets "sample, infer, transmit" be written as straight-line code |
 
 Tasking uses stackful tasks, not Nim's closure iterators. Closure iterators need no assembly but allocate on the heap. **Verified** on both boards (§5.5). A signal from an interrupt needs nothing of its own: the handler sets a `{.volatile.}` variable and a task waits on it.
+
+**Proposed**, October 2026, and not yet agreed: libraries still missing, in the order they would come. Most of Nim's standard library cannot stand in for them on the board. `std/algorithm`'s `sort` is a merge sort that allocates, and `parseutils.parseInt` raises on overflow, which allocates (Appendix B).
+
+With the settings store, which needs all four. The first two were written by hand more than once for MQTT:
+
+| Library | Contents |
+|---|---|
+| Text in a fixed buffer | A `Text[64]` written to as `print` writes, and passed wherever an `openArray[char]` goes. `checks/wifi.nim` builds a topic a character at a time, and `lutra/mqtt` has a private one, `Payload` |
+| Reading numbers from text | Without allocating or raising. `lutra_espat` and `checks/wifi.nim` each have their own |
+| Printing decimals | `print decimal(field.x, 3)` gives `0.712` where it gave `712`; and log levels. Both are in the table above and not written |
+| CRC-32 | What the settings store and a log in flash check what they read against. `framing` has a CRC-16 |
+
+With the gesture demo and the window of samples, which will show which are used:
+
+| Library | Contents |
+|---|---|
+| Filters and running statistics | A moving average, a one-pole low-pass, a biquad, a median for spikes; a running mean and variance, by Welford's method, and the least and greatest. The variance is the core of a simple anomaly detector, and of scaling features for a model |
+| Trigonometry in whole numbers | `atan2`, `sin` and `cos` from tables, and Q-format multiplying with rounding and saturation, as the table above has. A compass heading from the LIS3MDL, and tilt from the accelerometer |
+| The FFT, exported | It is written, private to `signal`. Vibration, gestures and the sound of machines want a spectrum |
+| A sort that does not allocate | Insertion sort is enough for a window of samples; then a median and percentiles |
+| Steadying a model's answers | Averaging scores over the last few frames, with a threshold and a pause after each answer, as TensorFlow Lite Micro's `RecognizeCommands` does for keyword spotting, which flickers without it. Argmax, the top few, and turning int8 values into numbers and back, perhaps in Steady instead |
+
+Small, and for any time:
+
+| Library | Contents |
+|---|---|
+| A debounced button | Pressed, released and held, on any `Pin`. The double counts noted in the button example are what a beginner meets next |
+| Random numbers from a seed | Xorshift or PCG. The same numbers every run for tests, numbers on the STM32L475, whose generator is not written, and jitter for retrying |
+| Trying again, waiting longer each time | For a lost connection, which MQTT does not make again (§12) |
+| Writing JSON | Through the machinery of `print`, as `json(x = ax, y = ay)`, for the dashboards that expect it. Not reading it |
+| A list of fixed size | Add, length, go through, remove by moving the last into its place: what is wanted where `seq` is not allowed |
+
+Until something needs them: a command line on the console, types for physical units, CBOR and base64, a priority queue, and a fuller fusion of sensors, such as Madgwick's filter.
 
 ### 8.2 TinyML
 
@@ -646,6 +714,34 @@ if wifi.init() and wifi.join(network, password) and broker.connect():
 |---|---|---|
 | Settings store | Key-value storage in flash | Credentials and calibration |
 | Measurement | Cycle and energy measurement helpers, taken from Steady's benchmark | Users will want the numbers |
+
+**Proposed**, October 2026, for storage in flash, and not yet agreed.
+
+A region of flash that no image uses is set aside in the memory description, and written while the program runs. The C3's description already has a region held back at the end of flash, `reservedSize` (§5.2), with no way yet to set it. Flash is written by three rules:
+
+- **A block is erased before it is written.** Writing turns ones into zeros; only erasing a block turns them back.
+- **A block wears out**, after some number of erases, so what is written often has to move about.
+- **Power can go part-way through.** What was there before has to survive: two copies, each with a count and a check, or a log that is only added to.
+
+What the datasheets say of the two chips, not yet checked and so not yet in Appendices A and D:
+
+| | ESP32-C3-DevKitM-1 | B-L475E-IOT01A |
+|---|---|---|
+| Flash | The module's SPI flash, 4 MB | The chip's own, 1 MB in two banks of 512 KB |
+| Erased in | 4 KB sectors, in tens of milliseconds | 2 KB pages, in about 22 ms |
+| Written in | Any size up to 256 bytes | 8 bytes at once, each 8 once only between erases, as it keeps a check code |
+| Erases a block lasts | About 100,000 | About 10,000 |
+| While writing | Code cannot be read from flash, so the writing has to run from RAM. The trap vector is in flash (§5.5), so interrupts are off throughout, and an erase silences them for tens of milliseconds: a UART at 115200 baud fills its 128-byte FIFO in about 11 ms. Writes have to be rare, or the vector and handlers moved to RAM first. The boot ROM has routines for erasing and writing, as it has for the cache | Only the bank being written stops. With storage in the bank the program is not in, the program and its interrupts go on |
+
+What it opens up: settings, such as the Wi-Fi network, out of the image (§12); calibration measured once and kept, such as a gyroscope's offset at rest; data recorded where a device lives, with no cable, and read back later, which is how training data from the field is had; examples kept for learning on the device, or what normal looks like to an anomaly detector; a model replaced without the firmware, and later updates over the air (§8.5); a count that survives a reset, and the last fault report.
+
+Proposed in three layers:
+
+1. **Raw storage**: a region of the memory description, with erase, write and read, behind an interface of its own.
+2. **The settings store**, on that. The author is still to choose between a typed settings object saved whole, in two copies taken in turn, each with a count and a CRC, and checked when the program is compiled; and a small key-value store with wear-levelling (§1.2). The first is about a hundred lines.
+3. **A log of records**, later and if wanted: `records` added in turn around a ring of blocks. A packet of `framing` is found again after damage, which suits a log that power can cut.
+
+**Proposed** for littlefs (`github.com/littlefs-project/littlefs`): not now. It could sit on the first layer, as it asks only for read, write, erase and sync, and can run on buffers it is given with no heap. It survives power cuts, moves wear about, and needs little RAM. But it is about 6,000 lines of C, to be wrapped rather than ported, against Lutra's aim of pure Nim; it is 15 to 20 KB of code for what a few hundred lines of Nim covers; and on the C3 its own housekeeping erases when the program has not chosen to, each with interrupts off. If a program wants files by name, rewritten in parts, or folders, littlefs can be a package of its own, `lutra_littlefs`, as `lutra_espat` is.
 
 ### 8.5 Deliberately later
 
@@ -952,7 +1048,7 @@ Left by earlier milestones, and worth going back to before a release, most impor
 | Gap | Why it matters |
 |---|---|
 | A panic handler | Programs are built with `-d:danger` because a failed check has nowhere to be reported (§12), so an index out of range corrupts memory silently. A handler that prints the check and the line to the console, and stops, would let programs keep Nim's checks. It is in §7's core tier |
-| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`) |
+| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`). Then the packages go in Nimble's list, from a GitHub organisation (§8) |
 | Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
 | A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
 | PWM and ADC | Left until something needs them (§11, M3). An Arduino user expects both early, and §7 has them as a tier of their own |
@@ -1181,6 +1277,7 @@ proc start() {.exportc: "_start",
 - **GNU `ld` cannot place a section by its own size.** `.stacks (ORIGIN(ram) + LENGTH(ram) - SIZEOF(.stacks))` takes the size as 0 and then overflows the region.
 - **A `static` object parameter cannot size the return type.** `func table(m: static Mfcc): array[m.melBins, int32]` fails with "cannot evaluate at compile time: m". Pass the size as a `static int` of its own.
 - **Going through a constant array of strings allocates.** Each string is copied on its way to the loop variable, and the program then fails to link, for want of `end`. Hold data from `staticRead` as an array of numbers, built in a `const` block. A short list of commands to go through can be `cstring`s: `for setting in [cstring"E0", "+CWMODE=1"]` copies nothing.
+- **Much of the standard library allocates or raises.** `std/algorithm`'s `sort` is a merge sort with a buffer from the heap, and `parseutils.parseInt` raises `ValueError` on overflow; an exception is allocated. Read in the library's source, not tried on the board, where the one allocation met so far failed to link.
 - **`--skipProjCfg` builds for the host from a folder whose `config.nims` selects a board.** `nim keywords` uses it to build one source file both ways. That file tells them apart with `when defined(lutraBoard)`.
 - **A module cannot import another of its own name**, wherever the other is. `checks/keywords.nim` is not `kws.nim` because Steady's generated module is.
 - **Code at the top level of a module costs an error check.** With `--exceptions:goto` each module's own code ends by testing Nim's error flag, and that test keeps `exit` in the link. A program's main module loses it when it ends in a loop, as unreachable. A board's module that set its console up at the top level did not, and with the C library that ships for ARM `exit` brought 1 KB of RAM and 1.4 KB of flash into every program. Hence `lutraBoardStart`, a procedure the startup code calls.
