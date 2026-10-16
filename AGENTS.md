@@ -50,7 +50,7 @@ A hardware fact is not relied on until a check has exercised it; then it goes in
 There is no heap (`--mm:none`), and programs are built for size. Appendix B of design.md has the full list of surprises; the ones met most:
 
 - No `seq`, `string`, `ref` or closures at run time. Use arrays, `openArray`, `cstring`, and `lutra/containers`.
-- Much of the standard library allocates or raises: `std/algorithm`'s `sort`, `parseutils.parseInt`, `std/strformat`. Use `print` and `lutra/fmt`.
+- Much of the standard library allocates or raises: `std/algorithm`'s `sort`, `parseutils.parseInt`, `std/strformat`. Use `print`, `log.info`, a `Text` from `lutra/fmt` for building strings, and `lutra/parse` for reading numbers.
 - `cstring"a\n"` and `p"a\n"` are raw literals, so `\n` is two characters. Write `cstring("a\n")`.
 - Going through a constant array of strings allocates. Use `cstring`s or numbers.
 - `int` is 32 bits on the board and 64 on the host. Code that must agree with the host names its sizes: `int32`, `uint64`.

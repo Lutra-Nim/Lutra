@@ -148,7 +148,7 @@ The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
 | `src/lutra/chips/` | What depends on the silicon: registers, clocks, memory map, peripherals |
 | `src/lutra/boards/` | What depends on the circuit board: pin names, wiring, flash size |
 | `src/lutra/hal/` | The interfaces libraries are written against |
-| `src/lutra/*.nim` | Libraries: printing, time, tasks, records, containers, framing, arithmetic in whole numbers, audio features, AT commands, MQTT |
+| `src/lutra/*.nim` | Libraries: printing, text, logging, reading numbers, checksums, time, tasks, records, containers, framing, arithmetic in whole numbers, audio features, AT commands, MQTT |
 | `src/lutra/project.nim` | The host side: board selection and the tasks above. `capture.nim` is the decoder `nim capture` builds |
 | `tools/` | Empty so far; for the register generator |
 | `checks/` | Hardware checks, for one board and for two wired together |

@@ -141,7 +141,7 @@ proc monitorCommand(port, addr2line: string): string =
   # After a reset the line waits a second, for the program to be running
   if send != "": result = (if resetFirst: "sleep 1; " else: "") & "printf '%s\\r\\n' \"$LUTRA_SEND\" >&3; "
   if timeout != "": result.add "timeout " & seconds(timeout) & " "
-  result.add "LC_ALL=C awk \"$LUTRA_READER\"" # Bytes, whatever they are
+  result.add "env LC_ALL=C awk \"$LUTRA_READER\"" # Bytes, whatever they are
 
 proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
   ## A shell command that resets a board and prints what it prints, from the

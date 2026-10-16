@@ -9,15 +9,8 @@
 ## zero, and noise between packets cannot damage the packet after it. Zeros
 ## with nothing between them are passed over.
 
-import hal/bytelink
-
-func crc16*(data: openArray[byte]): uint16 =
-  ## CRC-16/CCITT-FALSE
-  result = 0xffff
-  for b in data:
-    result = result xor (b.uint16 shl 8)
-    for _ in 0..<8:
-      result = if (result and 0x8000) != 0: (result shl 1) xor 0x1021 else: result shl 1
+import hal/bytelink, crc
+export crc16
 
 proc sendFrame*(link: static ByteLink, payload: openArray[byte]) =
   mixin send

@@ -63,7 +63,7 @@ What exists, all exercised on hardware:
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections, and timer events as `{.interrupt: every(10.ms).}` procs |
 | Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, a drift-free `for turn in every(10.ms)`, and a report of a task's stack overflowing (§5.5) |
-| Libraries | Printing without a heap, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
+| Libraries | Printing without a heap, into a fixed `Text` too, log levels, reading numbers, CRC-16 and CRC-32, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Connectivity | A `Socket` interface, an engine for AT commands, and an MQTT client that publishes and subscribes (§8.3) |
 | Beside this repository | Three driver packages, each verified on the real part: `lutra_lsm6ds33`, for an accelerometer and gyroscope, `lutra_lis3mdl`, for a magnetometer, and `lutra_espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `capture`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
@@ -613,7 +613,7 @@ And on the STM32L475, which has what M4's exit needed:
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/Lutra-Nim/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
+Written so far: printing, into a `Text` and as decimals (`fmt`), logging (`lutra`), reading numbers (`parse`), CRCs (`crc`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/Lutra-Nim/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
 
 ### 8.1 Core
 
@@ -629,14 +629,22 @@ Tasking uses stackful tasks, not Nim's closure iterators. Closure iterators need
 
 **Proposed**, October 2026, and not yet agreed: libraries still missing, in the order they would come. Most of Nim's standard library cannot stand in for them on the board. `std/algorithm`'s `sort` is a merge sort that allocates, and `parseutils.parseInt` raises on overflow, which allocates (Appendix B).
 
-With the settings store, which needs all four. The first two were written by hand more than once for MQTT:
+**Written**, 16 October 2026, the four the settings store needs, after the author chose each shape:
 
-| Library | Contents |
-|---|---|
-| Text in a fixed buffer | A `Text[64]` written to as `print` writes, and passed wherever an `openArray[char]` goes. `checks/wifi.nim` builds a topic a character at a time, and `lutra/mqtt` has a private one, `Payload` |
-| Reading numbers from text | Without allocating or raising. `lutra_espat` and `checks/wifi.nim` each have their own |
-| Printing decimals | `print decimal(field.x, 3)` gives `0.712` where it gave `712`; and log levels. Both are in the table above and not written |
-| CRC-32 | What the settings store and a log in flash check what they read against. `framing` has a CRC-16 |
+```nim
+var topic: Text[32]                  # In fmt. What does not fit is dropped; `full` says so
+topic.write "lutra/", hex(id), "/temp"
+broker.subscribe(topic.chars)        # A converter cannot give an openArray, so `chars` does
+
+var n: int32
+if line.parseInt(n, start = 5) == 0: ... # lutra/parse: std/parseutils' names, never raising
+
+print decimal(field.x, 3)            # 712 prints as 0.712
+log.info "joined ", network          # 1532 ms info  joined home; -d:log=debug|info|warn|error|off
+crc32(data)                          # lutra/crc, beside the crc16 that moved there from framing
+```
+
+`checks/wifi.nim` and `lutra_espat` now use `Text` and `parseInt` in place of their own. `lutra/mqtt`'s `Payload` stays, as it writes straight into the packet. `log` is one name, so that `info` and `error` stay free for programs, and `std/math`'s `log` does not clash with it.
 
 With the gesture demo and the window of samples, which will show which are used:
 

@@ -1,12 +1,13 @@
 ## Lutra, a Nim-only bare-metal stack for TinyML microcontrollers.
 ##
 ## `import lutra` gives the board selected in the project's `config.nims`: its
-## pins and peripherals, and printing, time, tasks and records on top of them.
+## pins and peripherals, and printing, logging, reading numbers, time, tasks
+## and records on top of them.
 
 import std/[macros, strutils]
-import lutra/[fmt, time, tasks, claims, records]
+import lutra/[fmt, parse, time, tasks, claims, records]
 import lutra/hal/[pin, bytelink, i2c, spi]
-export fmt, time, records, pin, bytelink, i2c, spi
+export fmt, parse, time, records, pin, bytelink, i2c, spi
 export tasks.wait, tasks.idle
 
 const lutraBoard {.strdefine.} = ""
@@ -28,6 +29,34 @@ template print*(args: varargs[untyped]) =
 
 proc millis*(): uint64 = micros() div 1000
   ## Milliseconds since reset
+
+type Log* = object
+
+const
+  log* = Log()
+    ## Lines on the console, each with the time and its level:
+    ##
+    ##   log.info "joined ", network     # 1532 ms info  joined home
+    ##
+    ## `log.debug`, `log.info`, `log.warn` and `log.error` take what `print`
+    ## takes. Below the level of `-d:log=...`, `info` unless it says, a line
+    ## is left out of the program. `-d:log=off` leaves out every one.
+  logLevel {.strdefine: "log".} = "info"
+  levels = ["debug", "info", "warn", "error", "off"]
+
+when logLevel notin levels:
+  {.error: "-d:log=" & logLevel & " is not one of debug, info, warn, error and off".}
+
+macro logLine(level: static string, args: varargs[untyped]): untyped =
+  if levels.find(level) < levels.find(logLevel): return newEmptyNode()
+  result = newCall(bindSym"print", newCall(bindSym"millis"), newLit(" ms " & level.alignLeft(6)))
+  for arg in args: result.add arg
+  result.add newLit('\n')
+
+template debug*(_: Log, args: varargs[untyped]) = logLine("debug", args)
+template info*(_: Log, args: varargs[untyped]) = logLine("info", args)
+template warn*(_: Log, args: varargs[untyped]) = logLine("warn", args)
+template error*(_: Log, args: varargs[untyped]) = logLine("error", args)
 
 proc delay*(duration: Duration) =
   ## Lets the other tasks run for `duration`
