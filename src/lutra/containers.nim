@@ -23,3 +23,39 @@ proc pop*[N, T](ring: var Ring[N, T]): T =
   ## The oldest item. The ring must not be empty.
   result = ring.items[ring.head and (N - 1)]
   ring.head = ring.head + 1
+
+type List*[N: static int; T] = object
+  ## Up to `N` items, in the order added until one is deleted: what is wanted
+  ## where `seq` is not allowed
+  items: array[N, T]
+  count: int
+
+func len*(list: List): int = list.count
+func full*(list: List): bool = list.count == list.N
+
+proc add*[N, T](list: var List[N, T], item: T) =
+  ## Panics when the list is full; `full` says so first
+  list.items[list.count] = item
+  inc list.count
+
+template `[]`*(list: List, i: int): untyped =
+  list.items.toOpenArray(0, list.count - 1)[i] # Checked against what is there, not N
+
+template `[]=`*(list: var List, i: int, item: untyped) =
+  list.items.toOpenArray(0, list.count - 1)[i] = item
+
+proc del*[N, T](list: var List[N, T], i: int) =
+  ## Removes item `i` by moving the last into its place, as `seq.del` does
+  list.items.toOpenArray(0, list.count - 1)[i] = list.items[list.count - 1]
+  dec list.count
+
+proc clear*(list: var List) = list.count = 0
+
+iterator items*[N, T](list: List[N, T]): T =
+  for i in 0 ..< list.count: yield list.items[i]
+
+iterator mitems*[N, T](list: var List[N, T]): var T =
+  for i in 0 ..< list.count: yield list.items[i]
+
+iterator pairs*[N, T](list: List[N, T]): (int, T) =
+  for i in 0 ..< list.count: yield (i, list.items[i])

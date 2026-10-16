@@ -8,6 +8,11 @@
 ##   topic.write "lutra/", hex(id), "/temp"
 ##   broker.subscribe(topic.chars)
 ##
+## `json(...)` writes an object, for the dashboards and brokers that expect one:
+##
+##   broker.publish("lutra/imu", json(ax = ax, temp = decimal(t, 2), ok = true))
+##   # {"ax":12,"temp":21.50,"ok":true}
+##
 ## A type becomes printable by giving it a `put`.
 
 import std/macros
@@ -85,9 +90,9 @@ template putInteger(link: untyped, value: SomeInteger) =
     if value < 0: link.put('-')
   link.putUnsigned(magnitude(value))
 
-template putHex(link: untyped, value: Hex) =
-  for digit in countdown(value.digits - 1, 0):
-    link.put("0123456789abcdef"[int((value.value shr (4 * digit)) and 0xf)])
+template putHex(link: untyped, number: Hex) =
+  for digit in countdown(number.digits - 1, 0):
+    link.put("0123456789abcdef"[int((number.value shr (4 * digit)) and 0xf)])
 
 template putDecimal(link: untyped, number: Decimal) =
   let whole = magnitude(number.value)
@@ -130,6 +135,73 @@ proc put*(text: var Text, flag: bool) =
 proc put*(text: var Text, value: SomeInteger) = text.putInteger(value)
 proc put*(text: var Text, value: Hex) = text.putHex(value)
 proc put*(text: var Text, value: Decimal) = text.putDecimal(value)
+
+# JSON. An object holds its fields, each as `json` was given it, but for
+# text, which it holds by reference until it is printed.
+
+type
+  Chars = object
+    data: ptr UncheckedArray[char]
+    len: int
+
+  Json*[T] = object
+    fields: T
+
+func field[T](value: T): T = value
+func field(text: static string): cstring = cstring(text) # A literal, which a field may hold
+func field(text: openArray[char]): Chars =
+  Chars(data: if text.len == 0: nil else: cast[ptr UncheckedArray[char]](unsafeAddr text[0]), len: text.len)
+template field(text: Text): Chars = field(text.chars)
+
+func jsonObject[T](fields: T): Json[T] = Json[T](fields: fields)
+
+macro json*(fields: varargs[untyped]): untyped =
+  ## An object of `name = value` fields, each a whole number, a `decimal`, a
+  ## `bool`, text, or another `json(...)`
+  let values = newNimNode(nnkTupleConstr)
+  for f in fields:
+    if f.kind != nnkExprEqExpr: error "json(...) takes name = value fields, as json(x = 1)", f
+    values.add newColonExpr(f[0], newCall(bindSym"field", f[1]))
+  newCall(bindSym"jsonObject", values)
+
+proc put*[T](link: static ByteSink, value: Json[T])
+proc put*[T](text: var Text, value: Json[T])
+
+template putEscaped(link: untyped, c: char) =
+  case c
+  of '"', '\\':
+    link.put('\\')
+    link.put(c)
+  of '\n': link.put(cstring("\\n"))
+  of '\0'..'\x09', '\x0b'..'\x1f':
+    link.put(cstring("\\u00"))
+    link.putHex(hex(uint8(c)))
+  else: link.put(c)
+
+template putQuoted(link: untyped, text: Chars | cstring) =
+  link.put('"')
+  when text is Chars:
+    for i in 0 ..< text.len: link.putEscaped(text.data[i])
+  else:
+    for c in text: link.putEscaped(c)
+  link.put('"')
+
+template putJson(link: untyped, value: Json) =
+  link.put('{')
+  var first = true
+  for name, item in value.fields.fieldPairs:
+    if not first: link.put(',')
+    first = false
+    link.put('"')
+    link.put(name)
+    link.put(cstring("\":"))
+    when item is Chars or item is cstring: link.putQuoted(item)
+    elif item is Json or item is bool or item is SomeInteger or item is Decimal: link.put(item)
+    else: {.error: "A json(...) field is a whole number, a decimal, a bool, text or a json(...)".}
+  link.put('}')
+
+proc put*[T](link: static ByteSink, value: Json[T]) = link.putJson(value)
+proc put*[T](text: var Text, value: Json[T]) = text.putJson(value)
 
 macro write*(link: untyped, args: varargs[untyped]): untyped =
   ## Writes each argument to `link` in turn

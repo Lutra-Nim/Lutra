@@ -33,3 +33,17 @@ topic.clear()
 doAssert topic.len == 0 and not topic.full and topic.chars.len == 0
 topic.write true, '!'
 doAssert printed(topic) == "true!"
+
+# JSON: names from the arguments, text quoted and escaped, objects nested
+var name: Text[8]
+name.write "imu", 1
+doAssert printed(json(ax = 12, ay = -3, temp = decimal(2150, 2), ok = true)) ==
+  """{"ax":12,"ay":-3,"temp":21.50,"ok":true}"""
+doAssert printed(json(id = name, at = json(x = 1, y = 2), note = "a \"b\"\n\x01")) ==
+  """{"id":"imu1","at":{"x":1,"y":2},"note":"a \"b\"\n\u0001"}"""
+doAssert printed(json(chars = name.chars, empty = name.chars.toOpenArray(0, -1))) ==
+  """{"chars":"imu1","empty":""}"""
+var payload: Text[32]
+payload.write json(n = 7)
+doAssert payload.chars.str == """{"n":7}"""
+doAssert not compiles(json(1))

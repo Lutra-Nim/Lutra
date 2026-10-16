@@ -63,7 +63,7 @@ What exists, all exercised on hardware:
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
 | Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections, and timer events as `{.interrupt: every(10.ms).}` procs |
 | Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, a drift-free `for turn in every(10.ms)`, and a report of a task's stack overflowing (§5.5) |
-| Libraries | Printing without a heap, into a fixed `Text` too, log levels, reading numbers, CRC-16 and CRC-32, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
+| Libraries | Printing without a heap, into a fixed `Text` too, JSON, log levels, a debounced button, random numbers from a seed and waits for trying again, a fixed-size list, reading numbers, CRC-16 and CRC-32, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
 | Connectivity | A `Socket` interface, an engine for AT commands, and an MQTT client that publishes and subscribes (§8.3) |
 | Beside this repository | Three driver packages, each verified on the real part: `lutra_lsm6ds33`, for an accelerometer and gyroscope, `lutra_lis3mdl`, for a magnetometer, and `lutra_espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware. Each is a repository of its own (§8) |
 | Host side | `build`, `flash`, `monitor`, `capture`, `size` and `selfcheck` tasks, and checks that stop a build that would not run |
@@ -656,15 +656,24 @@ With the gesture demo and the window of samples, which will show which are used:
 | A sort that does not allocate | Insertion sort is enough for a window of samples; then a median and percentiles |
 | Steadying a model's answers | Averaging scores over the last few frames, with a threshold and a pause after each answer, as TensorFlow Lite Micro's `RecognizeCommands` does for keyword spotting, which flickers without it. Argmax, the top few, and turning int8 values into numbers and back, perhaps in Steady instead |
 
-Small, and for any time:
+**Written**, 16 October 2026, the small ones, after the author chose each shape:
 
-| Library | Contents |
-|---|---|
-| A debounced button | Pressed, released and held, on any `Pin`. The double counts noted in the button example are what a beginner meets next |
-| Random numbers from a seed | Xorshift or PCG. The same numbers every run for tests, numbers on the STM32L475, whose generator is not written, and jitter for retrying |
-| Trying again, waiting longer each time | For a lost connection, which MQTT does not make again (§12) |
-| Writing JSON | Through the machinery of `print`, as `json(x = ax, y = ay)`, for the dashboards that expect it. Not reading it |
-| A list of fixed size | Add, length, go through, remove by moving the last into its place: what is wanted where `seq` is not allowed |
+```nim
+import lutra/button                   # Not exported by `lutra`: `pressed` and `held` would clash with handlers' names
+const key = bootButton.debounced(held = 1.sec)
+for change in key.changes: ...        # pressed, released, held; waits in between, as `broker.messages` does
+
+var dice = seeded(42)                 # lutra/chance: xorshift, 4 bytes, the same numbers each run
+dice.below(6)
+var retry = backoff(first = 100.ms, most = 30.sec) # Doubling, each moved by up to a tenth, seeded by the hardware
+delay retry.next()
+
+print json(ax = ax, temp = decimal(t, 2), ok = true, at = json(x = 1)) # In fmt: {"ax":12,"temp":21.50,...}
+
+var readings: List[16, int32]         # In containers: add, len, [], items, del as seq.del
+```
+
+**Verified**: each against tests on the host, the button against a stand-in pin and clock, bouncing; and on the C3, a press of the boot button made from the host through the USB bridge's DTR line gave one `pressed`, a `held` a second later and one `released`. A change counts once the pin has read otherwise for `settle`, 20 ms unless it says, timed from the first reading that differed.
 
 Until something needs them: a command line on the console, types for physical units, CBOR and base64, a priority queue, and a fuller fusion of sensors, such as Madgwick's filter.
 

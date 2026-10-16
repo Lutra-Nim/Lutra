@@ -117,7 +117,7 @@ Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks use 
 | `esp32c3_devkitm1` | Espressif's `riscv32-esp-elf` toolchain, on the `PATH` or where Espressif's installer puts it under `~/.espressif` | `esptool` 5, on the `PATH` or named in `ESPTOOL` |
 | `b_l475e_iot01a` | `arm-none-eabi-gcc` with its `newlib`, on the `PATH` | `pyocd`, on the `PATH` or named in `PYOCD` |
 
-[examples/](examples) has a folder for each board, and its programs are run from there. On the DevKitM-1, `nim flash rgb.nim`, `nim flash button.nim`, `nim flash tasks.nim` and `nim flash record.nim` need nothing wired; on the B-L475E-IOT01A, nor do `nim flash blink.nim`, `nim flash button.nim`, `nim flash tasks.nim` and `nim flash record.nim`.
+[examples/](examples) has a folder for each board, and its programs are run from there. On the DevKitM-1, `nim flash rgb.nim`, `nim flash button.nim`, `nim flash debounced.nim`, `nim flash tasks.nim` and `nim flash record.nim` need nothing wired; on the B-L475E-IOT01A, nor do `nim flash blink.nim`, `nim flash button.nim`, `nim flash debounced.nim`, `nim flash tasks.nim` and `nim flash record.nim`.
 
 The programs in [checks/](checks) are run from that folder and are set up for the DevKitM-1. `-d:board=b_l475e_iot01a` before a command builds for the other board.
 
