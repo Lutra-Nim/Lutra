@@ -2,6 +2,10 @@
 ## fraction is held as a whole number of 65536ths, written Q16 below. Every
 ## result is the same, bit for bit, on the host as on a board.
 
+# Hot loops, on the board without Nim's checks. The host tests run them with
+# the checks on, and the board gives the same bits as the host.
+when defined(lutraBoard): {.push checks: off.}
+
 func isqrt*(x: uint64): uint32 =
   ## The square root, rounded down
   var
@@ -36,3 +40,5 @@ func log2*(x: uint64): int32 =
 func ln*(x: uint64): int32 =
   ## The natural logarithm of a whole number that is not zero, as Q16
   int32((int64(log2(x)) * 744261118 + (1 shl 29)) shr 30) # By ln 2, as Q30
+
+when defined(lutraBoard): {.pop.}

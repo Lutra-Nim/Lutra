@@ -46,7 +46,7 @@ Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT
 Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi done (§11).
 
 - **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11). The author took MQTT before flash storage, which the plan had first.
-- **Left by earlier milestones**, and worth going back to before a release, a panic handler first: the table at the end of §11, M5.
+- **Left by earlier milestones**, and worth going back to before a release: the table at the end of §11, M5.
 - **Proposed to the author on 14 October, and not yet agreed:** this order of work: a panic handler, so that programs can keep Nim's checks; flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release, and listing it in Nimble's list of packages (§8). The repositories moved to the `Lutra-Nim` organisation on 16 October. Also the libraries still missing (§8.1), and what would make Lutra easier for coding agents (§4.4), of which an end to `nim monitor` and an `AGENTS.md` are the cheapest.
 - **Storage in flash** is set out in §8.4: how it works on each chip, what it opens up, three layers, and littlefs not yet. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time.
 - **Hardware:** as of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
@@ -270,7 +270,9 @@ type
   Volatile {.importc: "volatile unsigned int", nodecl.} = uint32
   Reg* = distinct uint32
 
-template `[]`*(reg: Reg): uint32 = cast[ptr Volatile](reg)[]
+proc load(address: uint32): uint32 {.importc: "*(volatile unsigned int *)", nodecl.}
+
+template `[]`*(reg: Reg): uint32 = load(uint32(reg)) # Evaluated once, as a call
 template `[]=`*(reg: Reg, value: uint32) = cast[ptr Volatile](reg)[] = value
 
 const gpioOutSet* = Reg 0x6000_4008
@@ -432,7 +434,22 @@ Not done: the trap vector and entry are in flash, so an interrupt can wait on a 
 
 **Decided:** no allocator unless requested.
 
-**Verified** complication: with `--mm:arc`, Nim's runtime keeps `malloc`, `free` and `exit` reachable even for a program that never allocates, about 1.4 KB. Steady builds with `--mm:none --panics:on` and links no allocator. Lutra's default configuration does the same, and also builds with `-d:danger`. **Verified:** no allocator symbols are linked into the hello-world or the Steady benchmark. The heap opt-in is not built yet. Neither is a panic handler, which is what building without `-d:danger` is waiting on.
+**Verified** complication: with `--mm:arc`, Nim's runtime keeps `malloc`, `free` and `exit` reachable even for a program that never allocates, about 1.4 KB. Steady builds with `--mm:none --panics:on` and links no allocator. Lutra's default configuration does the same. **Verified:** no allocator symbols are linked into the hello-world or the Steady benchmark. The heap opt-in is not built yet.
+
+**Decided**, 16 October 2026: programs keep Nim's checks, and a failed one is reported on the console, and stops the board. `-d:danger` turns the checks off. Numeric code whose host tests already run with the checks on turns them off for the board, in its own module: Lutra's `signal` and `fixed`, and Steady's kernels.
+
+```
+Panic: index out of bounds at 0x420102f4, sensors.nim(42)
+Panic: sensors.nim(12, 3) `x > 0` the sensor answered
+```
+
+**Verified** on the C3, for an index, an overflow, a range, a division by zero, an assertion and `quit`:
+
+- Nim's own `system/fatal` raises a Defect, which allocates it and a message made with `&` and `$`. `lutra/project` puts Lutra's in its place with `patchFile`. Its `sysFatal` is a template, so the message is never made: it passes on Nim's text when that is a literal, the assertion's text, which already says where, or the Defect's name. It calls `lutraPanic`, which the board defines with `reportPanics console`, as it does `reportFaults`.
+- Where the check failed is the return address of Nim's procedure that the check called, less 2 to fall inside the call. The image is built with debugging information, as DWARF 4 with Nim's line numbers, none of which is written to the board; `nim monitor` asks `addr2line`, in the image `nim flash` last wrote to that port, which line it is in. GCC merges the identical calls of different checks with `-Os`, and every overflow in a module was reported at the first; `-fno-tree-tail-merge` keeps them apart, and cost nothing in the self-check.
+- Nim does not know that its check procedures never return, and goes on to the module's error test, which can call `exit`. The board defines `exit` too, as a panic, so the C library's is never linked. That saved 60 bytes even with `-d:danger` on the B-L475E-IOT01A.
+- The cost, in the C3's self-check: 8,350 bytes of code with `-d:danger`, 8,690 with checks, 4%. In time, before the hot modules turned their checks off: the keyword front-end took 273 ms rather than 183, and Steady's `kws` model 847 ms rather than 277. After, 183 and 277.
+- Checks found a bug at once: `char(uart.fifo[] and 0xff)` read the FIFO three times, once for each side of the range check and once for the value, and each read takes a byte. `Reg`'s `[]` now reads through an imported C expression that Nim takes for a call, and so evaluates once (§5.1). Reading into a `let` in the template did it too, but at a module's top level the `let` is a global, which cost 76 bytes and slowed a loop that times the LED's pulses until it missed them.
 
 Consequence: the core needs allocation-free formatting and fixed-size containers (§8.1), because `string` and `seq` are not available by default.
 
@@ -558,7 +575,7 @@ State of Lutra against this table, on the ESP32-C3:
 
 | Tier | Verified | Not written |
 |---|---|---|
-| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, watchdogs off | A panic handler, a trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
+| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, panics, watchdogs off | A trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
 | Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
 | Timing and analog | Addressable LED | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
@@ -567,7 +584,7 @@ And on the STM32L475, which has what M4's exit needed:
 
 | Tier | Verified | Not written |
 |---|---|---|
-| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, a fault report | Receive through an interrupt, a second UART, a panic handler, reset reason, sleep, a watchdog |
+| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, a fault report, panics (built, not yet run on the board) | Receive through an interrupt, a second UART, reset reason, sleep, a watchdog |
 | Buses | I2C controller | SPI, DMA, I2C target |
 | Timing and analog | | PWM, ADC, pulse capture |
 | TinyML inputs | | Hardware RNG, which wants a 48 MHz clock started for it; I2S; raw flash storage |
@@ -1049,7 +1066,6 @@ Left by earlier milestones, and worth going back to before a release, most impor
 
 | Gap | Why it matters |
 |---|---|
-| A panic handler | Programs are built with `-d:danger` because a failed check has nowhere to be reported (§12), so an index out of range corrupts memory silently. A handler that prints the check and the line to the console, and stops, would let programs keep Nim's checks. It is in §7's core tier |
 | Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`). Then the packages go in Nimble's list, from the `Lutra-Nim` organisation (§8) |
 | Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
 | A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
@@ -1086,7 +1102,6 @@ Three use models Steady already runs on the C3.
 
 - The B-L475E-IOT01A has less than the DevKitM-1 (§7), and its clock is uncorrected (§11, M4), so its time and timer events run 0.18% fast.
 - Building for one board and then the other in the same folder writes the same files in `build/`, so the second build starts again from nothing.
-- Programs are built with `-d:danger`, because there is no panic handler to report a failed check.
 - Nothing checks that `i2c0.init` frees a sensor cut off mid-read by a reset. It was tried by hand, with a program that read without pause and was reset 16 times.
 - A driver's waits are forever: a link that loses a packet hangs, and the checks rely on the host's timeout. A program can bound its own with `wait(cond, within = ...)`, and an I2C transaction has a deadline of its own.
 - On the B-L475E-IOT01A, a task whose stack overflows past every variable below it runs off RAM and is reported as a fault, not as an overflow (§5.5). The program's own stack is not checked at all.
@@ -1210,7 +1225,7 @@ Not verified: the reset-default function of each pin. Take it from the ESP32-C3 
 
 - Compiler flags: `-march=rv32imc_zicsr -mabi=ilp32 -ffunction-sections -fdata-sections`. GCC 11.2 accepts `rv32imc_zicsr`; newer toolchains require the `_zicsr`.
 - Linker flags: `-nostartfiles -Wl,--gc-sections` and the linker script.
-- Nim flags used by the port: `--cpu:riscv32 --os:any -d:useMalloc --opt:size --exceptions:goto -d:danger`.
+- Nim flags used by the port: `--cpu:riscv32 --os:any -d:useMalloc --opt:size --exceptions:goto -d:release --debugger:native --lineDir:on`, Lutra's `system/fatal` (§5.6), and for GCC `-gdwarf-4 -fno-tree-tail-merge`.
 - Packaging and flashing:
 
 ```
@@ -1286,6 +1301,12 @@ proc start() {.exportc: "_start",
 - **A procedure declared in a template is visible to the next use of that template**, unlike a variable. Two pin handlers in one program, written as blocks as they were then, were a "redefinition of 'handler'". Mark such a procedure `{.gensym.}`.
 - **A name a macro makes up is looked for where the macro is expanded, and inside a procedure with a `static` parameter that is the caller's module.** `sink.write "Fault: "` in the architecture layer failed with "undeclared identifier: 'put'" when a board's module instantiated it, because `write` builds calls to `put` by name. The fault report calls `put` itself. `write` now names `put` with `bindSym("put", brOpen)`, which is found where `write` is defined and stays open to a `put` of the caller's, so `lutra_espat` can use `write`; the fault report was left as it is.
 - **A literal passed to a template's `uint32` parameter is still a literal.** `value shl 30` with 2 for `value` was worked out as an `int`, which is 32 bits on the target, and did not fit. Convert it in the template.
+- **NimScript's `patchFile` can replace a file `system` includes.** `patchFile("stdlib", "fatal", ...)` swaps `system/fatal`, which is how a failed check reaches Lutra without allocating (§5.6). The replacement must declare what the original did, `gotoBasedExceptions` and `quirkyExceptions`, or `system` does not compile.
+- **A range check repeats the expression it checks**, unless it is a call. `char(reg[] and 0xff)` became three volatile reads, for the low bound, the high bound and the value. A `let` in a template, to read once, is a global variable when the template is used at a module's top level.
+- **Nim's check procedures are not `noreturn` to the C compiler.** After each call comes a jump to the module's error test, which can call `exit` and bring the C library's in. A program that defines `exit` itself keeps it out.
+- **GCC 11 writes DWARF 5, which the `addr2line` of Espressif's binutils 2.35 cannot read**: every address was `??:?`. `-gdwarf-4` fixes it.
+- **`fileExists` is false for a device**, such as `/dev/ttyUSB0` or a link to it in `/dev/serial/by-id/`. `test -e` in the shell is not.
+- **Inside a task, NimScript's `getCommand()` is `nop`**, not the task's name.
 
 ---
 

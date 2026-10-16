@@ -94,6 +94,14 @@ if wifi.init() and wifi.join("network", "password") and broker.connect():
     print message.topic, ": ", message.payload, "\n"
 ```
 
+Nim's checks stay on. A failed one stops the board, and `nim monitor` names the line:
+
+```
+Panic: index out of bounds at 0x420102f4, blink.nim(12)
+```
+
+`-d:danger` before a command turns them off.
+
 Wiring mistakes stop the build. Using one pin for two things, here the console's transmit pin as an output, gives:
 
 ```

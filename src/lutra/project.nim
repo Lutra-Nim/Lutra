@@ -21,7 +21,7 @@
 ## `monitor` reads until stopped, or takes, before the task's name:
 ##
 ##   -d:reset            Reset the board before reading
-##   -d:send=AT+GMR      Send a line, ended by CR LF, before reading
+##   -d:send=AT+GMR      Send a line, ended by CR LF: at once, or a second after the reset
 ##   -d:until=PASS       End at the first line holding PASS
 ##   -d:timeout=30s      End after 30 s, or 500ms, or 2m. With `until`, a failure
 ##   -d:baud=921600      Read at another rate than 115200
@@ -108,19 +108,40 @@ proc seconds(duration: string): string =
   except ValueError: discard
   fail buildFailed, "Error: -d:timeout=" & duration & " should be as 30s, 500ms or 2m."
 
-proc monitorCommand(): string =
-  ## What `nim monitor` runs. With `until`, the reader's status is the result:
-  ## the text was seen, or not before the end
+const monitorReader = """
+  # Prints the console, naming the line of the program an address of a panic
+  # or a fault is in. Ends with 0 at `until`, 2 at a panic or a fault, which
+  # stop the board, and 1 if the port closes.
+  BEGIN { until = ENVIRON["LUTRA_UNTIL"]; elf = ENVIRON["LUTRA_ELF"]; tool = ENVIRON["LUTRA_ADDR2LINE"] }
+  { sub(/\r$/, "") }
+  elf != "" && /^(Panic|Fault): |^ +last call from / && match($0, /(at|from) 0x[0-9a-f]+/) {
+    address = substr($0, RSTART, RLENGTH); sub(/.* /, "", address)
+    where = ""; command = tool " -e " elf " " address; command | getline where; close(command)
+    sub(/ .*/, "", where); sub(/.*\//, "", where)
+    if (where !~ /^\?/ && sub(/:/, "(", where)) $0 = $0 ", " where ")"
+  }
+  { print; fflush() }
+  until != "" && index($0, until) { done = 1; exit 0 }
+  fault || /^Panic: / { done = 1; exit 2 }
+  /^Fault: / { fault = 1 }
+  END { if (!done) exit 1 }
+"""
+
+proc flashedRecord(port: string): string =
+  ## Where `flash` notes which program went to the board on `port`
+  buildDir() / "flashed" / gorge("readlink -f " & quoteShell(port)).lastPathPart
+
+proc monitorCommand(port, addr2line: string): string =
+  ## What `nim monitor` runs. It leaves the reader's status in a file.
   putEnv("LUTRA_SEND", send)
   putEnv("LUTRA_UNTIL", until)
-  var reader = (if send != "": "printf '%s\\r\\n' \"$LUTRA_SEND\" >&3; " else: "")
-  if timeout != "": reader.add "timeout " & seconds(timeout) & " "
-  if until != "":
-    reader.add "awk 'index($0, ENVIRON[\"LUTRA_UNTIL\"]) { print; found = 1; exit } " &
-      "{ print; fflush() } END { exit !found }'"
-  else:
-    reader.add "cat; status=$?; [ $status = 124 ] && exit 0; exit $status" # Time up is the end asked for
-  reader
+  putEnv("LUTRA_READER", monitorReader)
+  putEnv("LUTRA_ADDR2LINE", addr2line)
+  putEnv("LUTRA_ELF", if addr2line != "" and fileExists(flashedRecord(port)): readFile(flashedRecord(port)) else: "")
+  # After a reset the line waits a second, for the program to be running
+  if send != "": result = (if resetFirst: "sleep 1; " else: "") & "printf '%s\\r\\n' \"$LUTRA_SEND\" >&3; "
+  if timeout != "": result.add "timeout " & seconds(timeout) & " "
+  result.add "LC_ALL=C awk \"$LUTRA_READER\"" # Bytes, whatever they are
 
 proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
   ## A shell command that resets a board and prints what it prints, from the
@@ -181,7 +202,15 @@ template board*(default: static string) =
   switch("threads", "off")
   switch("panics", "on")
   switch("exceptions", "goto")
-  switch("define", "danger")
+  # Nim's checks stay on, and a failed one is reported by the board, through
+  # Lutra's `system/fatal`. `-d:danger` turns them off.
+  patchFile("stdlib", "fatal", source / "lutra/patches/fatal")
+  if not defined(danger): switch("define", "release")
+  # For an address to be named as a line of the program. None of it is on the board.
+  switch("debugger", "native")
+  switch("lineDir", "on")
+  switch("passC", "-gdwarf-4") # The ESP32-C3's binutils can't read GCC 11's DWARF 5
+  switch("passC", "-fno-tree-tail-merge") # Each failed check keeps its own call, and so its line
   switch("opt", "size")
 
   configure(memory, buildDir())
@@ -196,9 +225,11 @@ template board*(default: static string) =
     build(program())
 
   proc flash(program: string, port: string) {.inject, used.} =
-    ## Writes a built program to the board
+    ## Writes a built program to the board, and notes which it was
     try: flash(elf(program), memory, port)
     except OSError: fail noBoard, "Error: nothing was written to the board on " & port & "."
+    mkDir buildDir() / "flashed"
+    writeFile(flashedRecord(port), elf(program))
 
   task flash, "Build a program and write it to the board":
     need flasher()
@@ -206,13 +237,21 @@ template board*(default: static string) =
     flash(program(), serialPort())
 
   task monitor, "Read the board's console. -d:until=..., -d:timeout=... and -d:send=... end it":
-    let port = serialPort()
-    try:
-      exec "sh -c " & quoteShell(console(port,
-        if resetFirst: resetCommand(port) else: "true", monitorCommand()))
-    except OSError:
-      if until != "": fail checkFailed, "\nThe board did not print " & until & "."
-      fail noBoard, "\nThe board on " & port & " could not be read."
+    let
+      port = serialPort()
+      status = buildDir() / "monitor.status"
+      gcc = compiler().path
+      addr2line = if gcc.endsWith("gcc"): gcc[0 ..< ^3] & "addr2line" else: "" # Beside it
+    mkDir buildDir()
+    rmFile status
+    exec "sh -c " & quoteShell(console(port, if resetFirst: resetCommand(port) else: "true",
+      monitorCommand(port, addr2line)) & "; echo $? > " & quoteShell(status))
+    case (if fileExists(status): readFile(status).strip else: "")
+    of "0": discard
+    of "2": fail checkFailed, "\nThe board stopped."
+    of "124":
+      if until != "": fail checkFailed, "\nThe board did not print " & until & " within " & timeout & "."
+    else: fail noBoard, "\nThe board on " & port & " could not be read."
 
   task capture, "Reset the board and write its records as CSV: nim capture > data.csv":
     # The board's records go to stdout and the rest to stderr, so nothing

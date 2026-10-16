@@ -17,7 +17,15 @@ Run from a folder whose `config.nims` names a board: `examples/<board>/`, `check
 | `nim capture > data.csv` | Reset the board and write its records as CSV |
 | `nim size x.nim` | What each memory region holds |
 
-Plain `nim monitor` never ends. Give it `-d:until` or `-d:timeout`.
+Plain `nim monitor` ends only when the board stops, at a panic or a fault. Give it `-d:until` or `-d:timeout`.
+
+Nim's checks are on. A failed one stops the board, and `nim monitor` names the line, from the image `nim flash` last wrote from this folder:
+
+```
+Panic: index out of bounds at 0x420102f4, sensors.nim(42)
+```
+
+`-d:danger` builds without checks. A hot loop that is tested on the host turns them off in its own module, as `lutra/signal` does: `when defined(lutraBoard): {.push checks: off.}`.
 
 Every task ends with one of these codes, kept stable (`Exit` in [src/lutra/tooling.nim](src/lutra/tooling.nim)):
 
@@ -25,7 +33,7 @@ Every task ends with one of these codes, kept stable (`Exit` in [src/lutra/tooli
 |---|---|
 | 0 | Passed |
 | 1 | The build failed, or the command was not understood |
-| 2 | The board ran, and did not print what was expected (a check failed, or `-d:until` was not seen in time) |
+| 2 | The board ran, and did not print what was expected: a check failed, `-d:until` was not seen in time, or the board panicked |
 | 3 | No board, more than one, or it could not be reached or written to |
 | 4 | A tool or setting is missing: run `nim doctor` |
 

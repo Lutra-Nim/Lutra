@@ -135,11 +135,13 @@ block:
     count = 0
     let start = cycles()
     pulseChannel[] = pulseChannel[] or 1
+    {.push checks: off.} # A short pulse is 56 cycles, too few to check an index in as well
     while count < edges.len and cycles() - start < cpuHz div 10_000:
       if rgbLed.pin.read() != level:
         edges[count] = cycles()
         level = not level
         inc count
+    {.pop.}
     delay 1.ms
   var bits = 0'u32
   for bit in 0..<count div 2: # High for longer than half a microsecond is a 1

@@ -64,12 +64,12 @@ proc audit*(elf: string) =
       problems.add "The section " & section.name & " has no place in the memory layout."
 
   # Startup runs from RAM before flash can be read
-  var inRamCode = false
-  for line in gorge(tool"readelf" & " -rW " & quoteShell(elf)).splitLines:
+  # Only that code's relocations: the debugging information has many more
+  let ramRelocations = gorge(tool"readelf" & " -rW " & quoteShell(elf) &
+    " | awk '/^Relocation section/ { on = index($0, \".rela.ram.text\") } on'")
+  for line in ramRelocations.splitLines:
     let fields = line.splitWhitespace
-    if line.startsWith("Relocation section"):
-      inRamCode = "'.rela.ram.text'" in line
-    elif inRamCode and fields.len >= 5 and fields[2].startsWith("R_RISCV") and
+    if fields.len >= 5 and fields[2].startsWith("R_RISCV") and
         fields[4] != "lutraMain" and inFlash(fromHex[int](fields[3])):
       problems.add "Code that runs from RAM refers to " & fields[4] &
         ", which is in flash and can't be read until flash is mapped."

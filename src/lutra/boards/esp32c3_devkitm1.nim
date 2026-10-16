@@ -1,7 +1,7 @@
 ## ESP32-C3-DevKitM-1: an ESP32-C3-MINI-1 module with 4 MB of flash, a CP2102N
 ## USB bridge on UART0, an addressable LED on IO8 and the boot button on IO9.
 
-import ../chips/esp32c3
+import ../chips/esp32c3, ../panic
 export esp32c3
 
 const
@@ -27,3 +27,6 @@ const
 
   rgbLed* = RgbLed(pin: IO8)
   bootButton* = IO9
+
+when not defined(nimscript):
+  reportPanics(console)
