@@ -9,6 +9,7 @@ const
   clockControl* = Reg 0x4002_1000
   clockConfig* = Reg 0x4002_1008
   pllConfig* = Reg 0x4002_100C
+  pllSai1Config* = Reg 0x4002_1010
   ahb2Clocks* = Reg 0x4002_104C
   apb1Clocks* = Reg 0x4002_1058
   apb2Clocks* = Reg 0x4002_1060
@@ -42,6 +43,11 @@ const
   pinFallingEdges* = Reg 0x4001_040C
   pinInterrupts* = Reg 0x4001_0414
 
+  # The random number generator, which wants a 48 MHz clock, chosen in `clockSources`
+  randomControl* = Reg 0x5006_0800
+  randomStatus* = Reg 0x5006_0804
+  randomData* = Reg 0x5006_0808
+
   # USART, as offsets from a port's base
   uartControl* = 0x00'u32
   uartControl3* = 0x08'u32
@@ -49,6 +55,12 @@ const
   uartStatus* = 0x1C'u32
   uartReceived* = 0x24'u32
   uartToSend* = 0x28'u32
+
+  # SPI, as offsets from a bus's base
+  spiControl* = 0x00'u32
+  spiControl2* = 0x04'u32
+  spiStatus* = 0x08'u32
+  spiData* = 0x0C'u32
 
   # I2C, as offsets from a bus's base
   i2cControl* = 0x00'u32

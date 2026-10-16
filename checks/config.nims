@@ -122,6 +122,14 @@ task sensors, "Read the board's sensors through their driver packages":
   if "FAILED" in report or "END" notin report: fail checkFailed, "The sensor check FAILED."
   echo "\nThe sensor check passed."
 
+task loopback, "The B-L475E-IOT01A's SPI1, through a jumper back to itself":
+  build(thisDir() / "loopback.nim")
+  flash("loopback", serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
+  echo report
+  if "FAILED" in report or "END" notin report: fail checkFailed, "The loopback check FAILED."
+  echo "\nThe loopback check passed."
+
 task wifi, "Publish and subscribe over MQTT, through a second DevKitM-1 running Espressif's AT firmware":
   # The package is expected checked out beside this repository, and the
   # network in the environment, so that it is never written here
