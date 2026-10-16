@@ -33,10 +33,13 @@ nim monitor
 |---|---|
 | `nim build hello.nim` | Compile, link and check the image. `nim c hello.nim` skips the checks |
 | `nim flash hello.nim` | Build, and write to the board |
-| `nim monitor` | Read the board's console. `nim -d:reset monitor` resets it first |
+| `nim monitor` | Read the board's console. `-d:reset` resets it first, `-d:send=...` sends it a line, and `-d:until=PASS` or `-d:timeout=30s` end it |
 | `nim capture > data.csv` | Reset the board, and write its records as CSV |
 | `nim size hello.nim` | Build, and show what each memory region holds |
 | `nim selfcheck` | Run the board's hardware self-check and compare its output |
+| `nim doctor` | Check that this machine has the board's compiler, its flasher and access to its port |
+
+Each ends with an exit code that says what went wrong: 1 the build, 2 a check, 3 the board, 4 a missing tool. [AGENTS.md](AGENTS.md) has more for coding agents.
 
 An interrupt handler is a proc that says what calls it, bound at compile time and switched on by `start`:
 

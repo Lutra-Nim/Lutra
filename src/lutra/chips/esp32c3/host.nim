@@ -2,7 +2,7 @@
 ## linker script to build with, and packaging and flashing an image.
 
 import std/[os, strutils, sequtils, hashes]
-import memory
+import memory, ../../tooling
 
 const arch = "-march=rv32imc_zicsr -mabi=ilp32"
 
@@ -16,15 +16,17 @@ proc tool(name: string): string =
       return version / "riscv32-esp-elf/bin" / exe
   exe
 
-proc esptool(): string =
-  result = getEnv("ESPTOOL", "esptool")
-  if findExe(result) == "":
-    quit "Error: esptool not found, so nothing was flashed. Install it with " &
-      "`pipx install esptool`, or point ESPTOOL at it."
+proc compiler*(): Tool =
+  result = found(tool"gcc", "Install Espressif's RISC-V toolchain with their " &
+    "installer, which puts it under ~/.espressif, or put it on the PATH.")
+  result.name = "riscv32-esp-elf-gcc"
 
-proc checkFlasher*() =
-  ## Stops now, rather than after a build, if the board can't be flashed
-  discard esptool()
+proc flasher*(): Tool =
+  found("esptool", "Install it with `pipx install esptool`, or point ESPTOOL at it.", "ESPTOOL")
+
+proc esptool(): string =
+  need flasher()
+  flasher().path
 
 proc configure*(m: Memory, buildDir: string) =
   switch("cpu", "riscv32")
@@ -73,7 +75,7 @@ proc audit*(elf: string) =
         ", which is in flash and can't be read until flash is mapped."
 
   if problems.len > 0:
-    quit "Error: " & elf.lastPathPart & " would not run as built.\n  " &
+    fail buildFailed, "Error: " & elf.lastPathPart & " would not run as built.\n  " &
       problems.deduplicate.join("\n  ")
 
 proc size*(elf: string, m: Memory) =
@@ -102,7 +104,7 @@ proc flash*(elf: string, m: Memory, port: string) =
     " --flash-freq " & m.flashFreq & " --flash-size " & $(m.flashSize div 1.MB) & "MB" &
     " -o " & quoteShell(boot) & " " & quoteShell(base & ".ram.elf")
   if readFile(boot).len > m.codeOffset:
-    quit "The part of the program loaded into RAM is larger than the 64K of flash set aside for it."
+    fail buildFailed, "The part of the program loaded into RAM is larger than the 64K of flash set aside for it."
   exec esptool() & " --chip esp32c3 --port " & port & " --baud 460800 write-flash" &
     " 0x0 " & quoteShell(boot) &
     " " & $m.codeOffset & " " & quoteShell(code) &

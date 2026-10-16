@@ -2,7 +2,7 @@
 ## with, and flashing through the board's debug probe.
 
 import std/[os, strutils, sequtils, hashes]
-import memory
+import memory, ../../tooling
 
 const
   arch = "-mcpu=cortex-m4 -mthumb -mfloat-abi=soft"
@@ -10,15 +10,16 @@ const
 
 proc tool(name: string): string = "arm-none-eabi-" & name
 
-proc pyocd(): string =
-  result = getEnv("PYOCD", "pyocd")
-  if findExe(result) == "":
-    quit "Error: pyocd not found, so nothing was flashed. Install it with " &
-      "`pipx install pyocd`, or point PYOCD at it."
+proc compiler*(): Tool =
+  found(tool"gcc", "Install the Arm GNU toolchain with its newlib, as Ubuntu's " &
+    "`gcc-arm-none-eabi` and `libnewlib-arm-none-eabi`, on the PATH.")
 
-proc checkFlasher*() =
-  ## Stops now, rather than after a build, if the board can't be flashed
-  discard pyocd()
+proc flasher*(): Tool =
+  found("pyocd", "Install it with `pipx install pyocd`, or point PYOCD at it.", "PYOCD")
+
+proc pyocd(): string =
+  need flasher()
+  flasher().path
 
 proc configure*(m: Memory, buildDir: string) =
   switch("cpu", "arm")
@@ -51,7 +52,7 @@ proc audit*(elf: string) =
   let orphans = sections(elf).filterIt(it.address != 0 and
     it.name notin [".vectors", ".text", ".rodata", ".data", ".bss"])
   if orphans.len > 0:
-    quit "Error: " & elf.lastPathPart & " would not run as built.\n  " &
+    fail buildFailed, "Error: " & elf.lastPathPart & " would not run as built.\n  " &
       orphans.mapIt("The section " & it.name & " has no place in the memory layout.").join("\n  ")
 
 proc size*(elf: string, m: Memory) =

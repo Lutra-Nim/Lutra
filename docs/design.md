@@ -92,7 +92,7 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 Conventions the code follows:
 
 - **A chip is a folder of small modules.** `registers.nim` holds every address. `peripherals.nim` holds the types and instances and has to stay pure Nim, because `config.nims` imports it too. `host.nim` is the NimScript side: compiler flags, linker script, flashing, the link audit. `memory.nim` is shared by both sides.
-- **A chip's `host.nim` provides `configure`, `audit`, `size`, `flash`, `checkFlasher` and `resetCommand`**, and a board provides `memory`, `console` and `consolePorts`. That is all `lutra/project` asks of them.
+- **A chip's `host.nim` provides `configure`, `audit`, `size`, `flash`, `compiler`, `flasher` and `resetCommand`**, and a board provides `memory`, `console` and `consolePorts`. That is all `lutra/project` asks of them.
 - **What a board must do before a program starts goes in a procedure the chip's startup calls**, `lutraBoardStart` on the STM32L475, and not at the top level of the board's module (Appendix B).
 - **Interfaces own the good names.** `Pin`, `ByteLink` and `SpiDevice` are concepts in `hal/`, so the chip's own types are called something else (`Gpio`, `SpiDeviceOn`).
 - **Whatever configures a pin claims it** (§5.4), and whatever a program may do only once says so with `once`.
@@ -236,6 +236,8 @@ The tasks use `sh`, `stty` and `awk`, so they run on Linux only for now.
 **Proposed**, October 2026, from the author's notes on making Lutra and Steady easier for coding agents to use, and not yet agreed. Agents use Lutra two ways: writing firmware on top of it, and adding boards, chips and drivers. Most of what helps them helps people too.
 
 The M5 session that added MQTT was evidence. `nim monitor` only listens and never ends, so talking to the AT module took a bridge program and a Python script, and every command was wrapped in `timeout`. With two boards attached each command needed the port named. Several of the Nim surprises in Appendix B were met again, though they were written down.
+
+**Written**, 16 October 2026, of the table below: the bounded commands, `AGENTS.md` and `nim doctor`. `nim monitor` takes `-d:until=TEXT`, `-d:timeout=30s` and `-d:send=LINE`, as defines because Nim refuses an option it does not know before a task sees it, and as `-d:port` and `-d:reset` already were. The exit codes are `Exit` in `lutra/tooling`: 1 the build or the command line, 2 a check, or `until` not seen, 3 the board, 4 a missing tool or setting. A chip's `host.nim` now gives its `compiler` and `flasher` as `Tool`s, which the tasks and `nim doctor` both use, in place of `checkFlasher`.
 
 Worth doing soon, most valuable first:
 

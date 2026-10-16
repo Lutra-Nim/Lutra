@@ -11,20 +11,35 @@
 ##   nim capture > data.csv   Reset the board, and write its records as CSV
 ##   nim size hello.nim       Build, and show what each memory region holds
 ##   nim selfcheck            Run the board's hardware self-check
+##   nim doctor               Check that this machine has what the board needs
 ##
 ## The serial port is found when only one board of the kind is attached.
 ## Otherwise name it with `-d:port=/dev/ttyUSB1` before the task, or in
-## `LUTRA_PORT`. `monitor` takes `-d:reset` to reset the board before it starts
-## reading, and `-d:baud=...`. `-d:board=...` builds for another board than the
-## one `config.nims` names.
+## `LUTRA_PORT`. `-d:board=...` builds for another board than the one
+## `config.nims` names.
+##
+## `monitor` reads until stopped, or takes, before the task's name:
+##
+##   -d:reset            Reset the board before reading
+##   -d:send=AT+GMR      Send a line, ended by CR LF, before reading
+##   -d:until=PASS       End at the first line holding PASS
+##   -d:timeout=30s      End after 30 s, or 500ms, or 2m. With `until`, a failure
+##   -d:baud=921600      Read at another rate than 115200
+##
+## Every task ends with one of the codes of `Exit`, in `lutra/tooling`.
 
 import std/[macros, os, strutils, algorithm]
+import tooling
+export tooling
 
 const
   namedPort {.strdefine: "port".} = ""
   otherBoard {.strdefine: "board".} = ""
   baud {.intdefine.} = 115200
   resetFirst {.booldefine: "reset".} = false
+  send {.strdefine.} = ""
+  until {.strdefine.} = ""
+  timeout {.strdefine.} = ""
   source = currentSourcePath().parentDir.parentDir ## Holds lutra.nim
 
 macro importBoard(name: static string) =
@@ -33,17 +48,18 @@ macro importBoard(name: static string) =
     error "There is no board named '" & name & "' in " & file.parentDir
   newTree(nnkImportStmt, newLit(file))
 
-proc arguments(): tuple[switches, program: string] =
-  ## Splits `nim -d:x flash hello.nim` into "-d:x" and "hello.nim"
+proc arguments(): tuple[switches, task, program: string] =
+  ## Splits `nim -d:x flash hello.nim` into "-d:x", "flash" and "hello.nim"
   var positional: seq[string]
   for i in 1..paramCount():
     if paramStr(i).startsWith("-"): result.switches.add paramStr(i) & " "
     else: positional.add paramStr(i)
+  if positional.len > 0: result.task = positional[0]
   if positional.len > 1: result.program = positional[1]
 
 proc program*(): string =
   result = arguments().program
-  if result == "": quit "Which program? For example: nim " & getCommand() & " hello.nim"
+  if result == "": quit "Which program? For example: nim " & arguments().task & " hello.nim"
 
 proc buildDir*(): string = thisDir() / "build"
   ## Next to the project's config.nims
@@ -52,7 +68,8 @@ proc elf*(program: string): string =
   buildDir() / program.lastPathPart.changeFileExt("elf")
 
 proc compile*(program: string, switches = "") =
-  selfExec arguments().switches & switches & " c " & quoteShell(program)
+  try: selfExec arguments().switches & switches & " c " & quoteShell(program)
+  except OSError: quit ord(buildFailed) # The compiler has said why
 
 var portNames: seq[string] ## How the host names the port of the board's console
 
@@ -68,9 +85,11 @@ proc serialPort*(): string =
   if result == "":
     let found = serialPorts()
     if found.len != 1:
-      quit "Expected one serial port and found " & $found.len & " " & $found &
+      fail noBoard, "Expected one serial port and found " & $found.len & " " & $found &
         ". Name the board's with -d:port=... or LUTRA_PORT."
     result = found[0]
+  elif gorgeEx("test -e " & quoteShell(result)).exitCode != 0: # A device is no file to `fileExists`
+    fail noBoard, "There is no serial port " & result & "."
 
 proc console(port, resetCommand, reader: string): string =
   ## A shell command that reads a board's console. The port is opened once and
@@ -79,7 +98,29 @@ proc console(port, resetCommand, reader: string): string =
   ## opened.
   let mode = "stty " & $baud & " raw -echo -hupcl <&3; "
   "exec 3<>" & port & "; " & mode & "timeout 0.2 cat <&3 >/dev/null; " & resetCommand & "; " &
-    mode & reader & " <&3"
+    mode & "{ " & reader & "; } <&3"
+
+proc seconds(duration: string): string =
+  ## `-d:timeout` as `timeout` the command takes it
+  try:
+    if duration.endsWith("ms"): return $(duration[0..^3].parseInt / 1000)
+    if duration[^1] in {'s', 'm'}: return $duration[0..^2].parseInt & duration[^1]
+  except ValueError: discard
+  fail buildFailed, "Error: -d:timeout=" & duration & " should be as 30s, 500ms or 2m."
+
+proc monitorCommand(): string =
+  ## What `nim monitor` runs. With `until`, the reader's status is the result:
+  ## the text was seen, or not before the end
+  putEnv("LUTRA_SEND", send)
+  putEnv("LUTRA_UNTIL", until)
+  var reader = (if send != "": "printf '%s\\r\\n' \"$LUTRA_SEND\" >&3; " else: "")
+  if timeout != "": reader.add "timeout " & seconds(timeout) & " "
+  if until != "":
+    reader.add "awk 'index($0, ENVIRON[\"LUTRA_UNTIL\"]) { print; found = 1; exit } " &
+      "{ print; fflush() } END { exit !found }'"
+  else:
+    reader.add "cat; status=$?; [ $status = 124 ] && exit 0; exit $status" # Time up is the end asked for
+  reader
 
 proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
   ## A shell command that resets a board and prints what it prints, from the
@@ -94,11 +135,37 @@ proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): st
 proc capture*(port, resetCommand, first, last: string, seconds = 120): string =
   gorge(captureCommand(port, resetCommand, first, last, seconds)).replace("\r", "")
 
+proc problems(compiler, flasher: Tool): seq[string] =
+  ## What `nim doctor` finds missing, printing what it checks as it goes
+  proc line(good: bool, what, detail: string) =
+    echo (if good: "  ok       " else: "  MISSING  "), what, (if detail != "": "  " & detail else: "")
+  proc note(what: string) = echo "  note     ", what
+  let nimOk = (NimMajor, NimMinor, NimPatch) >= (2, 2, 6)
+  line nimOk, "Nim " & NimVersion, (if nimOk: "" else: "Lutra needs 2.2.6 or later.")
+  if not nimOk: result.add "Nim"
+  for tool in [compiler, flasher]:
+    line tool.path != "", tool.name, (if tool.path != "": tool.path else: tool.install)
+    if tool.path == "": result.add tool.name
+  for exe in ["sh", "stty", "awk", "timeout"]:
+    if findExe(exe) == "":
+      line false, exe, "The tasks need it, and so Linux for now."
+      result.add exe
+  let ports = serialPorts()
+  if ports.len == 0: note "No board attached"
+  for port in ports:
+    let usable = gorgeEx("test -r " & port & " -a -w " & port).exitCode == 0
+    line usable, port, (if usable: "" else: "You can't open it. Join its group, " &
+      gorge("stat -c %G " & port) & ", with `sudo usermod -aG " & gorge("stat -c %G " & port) &
+      " $USER`, then log in again.")
+    if not usable: result.add port
+  if ports.len > 1:
+    note $ports.len & " boards attached: name one with -d:port=... or LUTRA_PORT"
+
 template board*(default: static string) =
   const name = (if otherBoard != "": otherBoard else: default)
   importBoard(name)
   # What a board brings with it
-  mixin memory, consolePorts, configure, audit, checkFlasher, flash, size, resetCommand
+  mixin memory, consolePorts, configure, audit, compiler, flasher, flash, size, resetCommand
   portNames = @consolePorts
 
   switch("define", "lutraBoard=" & name)
@@ -121,20 +188,31 @@ template board*(default: static string) =
 
   proc build(program: string, switches = "") {.inject, used.} =
     ## Compiles, links and checks the result
+    need compiler()
     compile(program, switches)
     audit(elf(program))
 
   task build, "Compile, link and check a program":
     build(program())
 
-  task flash, "Build a program and write it to the board":
-    checkFlasher()
-    build(program())
-    flash(elf(program()), memory, serialPort())
+  proc flash(program: string, port: string) {.inject, used.} =
+    ## Writes a built program to the board
+    try: flash(elf(program), memory, port)
+    except OSError: fail noBoard, "Error: nothing was written to the board on " & port & "."
 
-  task monitor, "Read the board's console":
-    exec "sh -c " & quoteShell(console(serialPort(),
-      if resetFirst: resetCommand(serialPort()) else: "true", "cat"))
+  task flash, "Build a program and write it to the board":
+    need flasher()
+    build(program())
+    flash(program(), serialPort())
+
+  task monitor, "Read the board's console. -d:until=..., -d:timeout=... and -d:send=... end it":
+    let port = serialPort()
+    try:
+      exec "sh -c " & quoteShell(console(port,
+        if resetFirst: resetCommand(port) else: "true", monitorCommand()))
+    except OSError:
+      if until != "": fail checkFailed, "\nThe board did not print " & until & "."
+      fail noBoard, "\nThe board on " & port & " could not be read."
 
   task capture, "Reset the board and write its records as CSV: nim capture > data.csv":
     # The board's records go to stdout and the rest to stderr, so nothing
@@ -153,12 +231,18 @@ template board*(default: static string) =
     let
       check = source.parentDir / "checks" / name # Only in Lutra's repository
       expected = readFile(check & ".expected").strip
-    checkFlasher()
+    need flasher()
     build(check & ".nim")
-    flash(elf(check), memory, serialPort())
+    flash(check, serialPort())
     let got = capture(serialPort(), resetCommand(serialPort()),
       expected.splitLines[0], expected.splitLines[^1]).strip
     echo got
     if not got.startsWith(expected): # The last line may go on, with the address of a fault
-      quit "\nThe self-check FAILED. It should have printed:\n" & expected
+      fail checkFailed, "\nThe self-check FAILED. It should have printed:\n" & expected
     echo "\nThe self-check passed."
+
+  task doctor, "Check that this machine has what the board needs":
+    echo "For ", name, ":"
+    let missing = problems(compiler(), flasher())
+    if missing.len > 0: fail notSetUp, "\nMissing: " & missing.join(", ") & "."
+    echo "\nNothing is missing."
