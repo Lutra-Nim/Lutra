@@ -110,7 +110,7 @@ Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks use 
 
 The programs in [checks/](checks) are run from that folder and are set up for the DevKitM-1. `-d:board=b_l475e_iot01a` before a command builds for the other board.
 
-Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/garrettkinman/Lutra-LSM6DS33), for an accelerometer and gyroscope, [lutra_lis3mdl](https://github.com/garrettkinman/Lutra-LIS3MDL), for a magnetometer, and [lutra_espat](https://github.com/garrettkinman/Lutra-ESPAT), for Wi-Fi through an ESP32 running Espressif's AT firmware.
+Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/Lutra-Nim/Lutra-LSM6DS33), for an accelerometer and gyroscope, [lutra_lis3mdl](https://github.com/Lutra-Nim/Lutra-LIS3MDL), for a magnetometer, and [lutra_espat](https://github.com/Lutra-Nim/Lutra-ESPAT), for Wi-Fi through an ESP32 running Espressif's AT firmware.
 
 ## Checks
 

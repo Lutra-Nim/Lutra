@@ -37,7 +37,7 @@ Non-goals:
 
 **Decided: Lutra**, the otter genus. It is aquatic, like the author's other project names (Krill, Rorqual). Otters are mustelids, like the ratel. It also sounds like "LUT", a look-up table.
 
-Checked 14 October 2026: no package in Nimble's list, of about 3,000, is named for or mentions Lutra, so `lutra` and `lutra_*` are free there. On GitHub the name `lutra` belongs to someone's personal account, so an organisation for Lutra needs another; `lutra-nim`, `lutra-embedded`, `lutra-mcu` and `lutra-hal` were free (§8). Trademarks have not been checked.
+Checked 14 October 2026: no package in Nimble's list, of about 3,000, is named for or mentions Lutra, so `lutra` and `lutra_*` are free there. On GitHub the name `lutra` belongs to someone's personal account, so Lutra's organisation is `Lutra-Nim`, since 16 October 2026 the home of all four repositories (§8). Trademarks have not been checked.
 
 ### 1.2 Where things stand
 
@@ -47,7 +47,7 @@ Where to pick up: M5, with tasks, timer events, data capture and MQTT over Wi-Fi
 
 - **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11). The author took MQTT before flash storage, which the plan had first.
 - **Left by earlier milestones**, and worth going back to before a release, a panic handler first: the table at the end of §11, M5.
-- **Proposed to the author on 14 October, and not yet agreed:** this order of work: a panic handler, so that programs can keep Nim's checks; flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release, from a GitHub organisation of its own and in Nimble's list of packages (§8). Also the libraries still missing (§8.1), and what would make Lutra easier for coding agents (§4.4), of which an end to `nim monitor` and an `AGENTS.md` are the cheapest.
+- **Proposed to the author on 14 October, and not yet agreed:** this order of work: a panic handler, so that programs can keep Nim's checks; flash storage and the settings store; the gesture demo, which MQTT and the accelerometer driver now leave needing only a model and a window of samples; then making Lutra installable for a release, and listing it in Nimble's list of packages (§8). The repositories moved to the `Lutra-Nim` organisation on 16 October. Also the libraries still missing (§8.1), and what would make Lutra easier for coding agents (§4.4), of which an end to `nim monitor` and an `AGENTS.md` are the cheapest.
 - **Storage in flash** is set out in §8.4: how it works on each chip, what it opens up, three layers, and littlefs not yet. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time.
 - **Hardware:** as of 14 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
 
@@ -582,19 +582,19 @@ And on the STM32L475, which has what M4's exit needed:
 | Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lsm6ds33`, an SX126x LoRa driver, a driver for one cellular modem |
 
 - Nim compiles only what a program imports, so a bundled library costs nothing in the image. What it costs is sharing Lutra's version: a breaking change in one bundled library is a breaking release of all.
-- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/garrettkinman/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/garrettkinman/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them, in a folder named `lutra`, and `nim sensors` finds them the same way, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
+- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/Lutra-Nim/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/Lutra-Nim/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them, in a folder named `lutra`, and `nim sensors` finds them the same way, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
 - How settled a module is belongs in its documentation, not in where it lives.
 
 **Proposed**, October 2026, for where the packages live and how they are found, and not yet agreed:
 
-1. **A GitHub organisation, soon.** For example `lutra-nim`, since `lutra` is taken (§1.1). The four repositories move to it before the first release, so that the release's links are the lasting ones: every driver and tutorial pointing at the author's own account makes moving dearer later, and GitHub's redirects do not reach Nimble's list or other people's notes. It also lets someone else keep a driver without holding the keys to Lutra, which answers part of the one-maintainer risk (§12).
+1. **A GitHub organisation.** **Done** 16 October 2026: `github.com/Lutra-Nim`, since `lutra` is taken (§1.1). The four repositories moved to it before the first release, so that the release's links are the lasting ones: every driver and tutorial pointing at the author's own account makes moving dearer later, and GitHub's redirects do not reach Nimble's list or other people's notes. It also lets someone else keep a driver without holding the keys to Lutra, which answers part of the one-maintainer risk (§12).
 2. **Lutra installable by Nimble.** This comes before anything is listed anywhere. Nothing installs yet: the drivers find Lutra as a folder beside them (§11, M5).
 3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, such as `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first.
 4. **A directory of Lutra's own, later**: when there are a dozen packages or so, or people the author does not know are writing them. Until then the README's list of drivers serves. When it comes, it is a repository in the organisation holding an index in JSON, an entry for each package: the interfaces it needs or provides, its bus and address, the boards it was tested on, and the checks it passes. A page is made from the index, and agents read the index itself (§4.4). Nimble's list holds only a name, an address and tags.
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/garrettkinman/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
+Written so far: printing (`fmt`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/Lutra-Nim/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
 
 ### 8.1 Core
 
@@ -1048,7 +1048,7 @@ Left by earlier milestones, and worth going back to before a release, most impor
 | Gap | Why it matters |
 |---|---|
 | A panic handler | Programs are built with `-d:danger` because a failed check has nowhere to be reported (§12), so an index out of range corrupts memory silently. A handler that prints the check and the line to the console, and stops, would let programs keep Nim's checks. It is in §7's core tier |
-| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`). Then the packages go in Nimble's list, from a GitHub organisation (§8) |
+| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`). Then the packages go in Nimble's list, from the `Lutra-Nim` organisation (§8) |
 | Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
 | A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
 | PWM and ADC | Left until something needs them (§11, M3). An Arduino user expects both early, and §7 has them as a tier of their own |
@@ -1379,7 +1379,7 @@ Everything here was exercised on hardware unless marked otherwise.
 ## References
 
 - Ratel: `github.com/PMunch/ratel`. Fork with the C3 port: `github.com/garrettkinman/ratel`.
-- Driver packages: `github.com/garrettkinman/Lutra-LSM6DS33` and `github.com/garrettkinman/Lutra-LIS3MDL`.
+- Driver packages: `github.com/Lutra-Nim/Lutra-LSM6DS33`, `github.com/Lutra-Nim/Lutra-LIS3MDL` and `github.com/Lutra-Nim/Lutra-ESPAT`.
 - Steady: `github.com/garrettkinman/Steady`. See `tests/mcu/boards/esp32c3/` for the original C port and its notes, and `tests/mcu/bench.nim.in` for the board contract.
 - Krill & Reflex project doc, §7 "Track R" and §3 "Hardware budget".
 - Espressif: ESP32-C3 Technical Reference Manual; SVD files; `esp32c3.rom.ld` in esp-idf for ROM routine addresses.
