@@ -17,3 +17,22 @@ doAssert ring.len == 0
 doAssert not compiles(block:
   var odd: Ring[3, int]
   discard odd.push(1))
+
+# A list keeps what is added, in order, until an item is deleted, when the
+# last takes its place
+block:
+  var list: List[4, int]
+  for x in [10, 20, 30]: list.add x
+  doAssert list.len == 3 and not list.full and list[1] == 20
+  list.del 0
+  doAssert list.len == 2 and list[0] == 30 and list[1] == 20
+  list[1] = 21
+  for x in list.mitems: x += 1
+  var seen: seq[int]
+  for i, x in list: seen.add i * 100 + x
+  doAssert seen == @[31, 122]
+  list.add 1
+  list.add 2
+  doAssert list.full
+  list.clear()
+  doAssert list.len == 0

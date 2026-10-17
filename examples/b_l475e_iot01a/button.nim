@@ -1,7 +1,7 @@
 ## Toggles LD2 from an interrupt, each time the board's blue button is pressed.
 ##
 ## Nothing here is debounced, so one press can count more than once if the
-## contacts bounce.
+## contacts bounce. `debounced.nim` takes the bounce out.
 
 import lutra
 

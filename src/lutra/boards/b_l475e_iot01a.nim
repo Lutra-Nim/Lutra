@@ -2,7 +2,7 @@
 ## 1 MB of flash, an ST-LINK probe that also carries USART1 to the host, two
 ## green LEDs and a button.
 
-import ../chips/stm32l475
+import ../chips/stm32l475, ../panic
 export stm32l475
 
 const
@@ -20,3 +20,4 @@ when not defined(nimscript):
     console.init(tx = PB6, rx = PB7, baud = 115200)
 
   reportFaults(console)
+  reportPanics(console)

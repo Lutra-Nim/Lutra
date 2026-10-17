@@ -13,6 +13,10 @@
 ## its defaults.
 
 import std/[math, bitops]
+
+# Hot loops, on the board without Nim's checks. The host tests run them with
+# the checks on, and the board gives the same bits as the host.
+when defined(lutraBoard): {.push checks: off.}
 import fixed
 
 type Mfcc* = object
@@ -131,3 +135,5 @@ proc compute*(m: static Mfcc, samples: openArray[int16], output: var openArray[i
     var sum = 0'i64
     for band in 0..<m.melBins: sum += int64(cosine[k][band]) * logs[band]
     output[k] = int32((sum + (1 shl 29)) shr 30)
+
+when defined(lutraBoard): {.pop.}

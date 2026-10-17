@@ -21,10 +21,10 @@ task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
   writeFile(work / "bench.nim", readFile(steady / "tests/mcu/bench.nim.in").replace("@MODEL@", model))
   build(thisDir() / "steady.nim", "-d:steadyProfile -d:steadyNonce=" & nonce &
     " --path:" & steady / "src" & " --path:" & work)
-  flash(elf("steady"), memory, serialPort())
+  flash("steady", serialPort())
   let record = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END")
   echo record
-  if "nonce " & nonce notin record: quit "That is not the image that was just built."
+  if "nonce " & nonce notin record: fail checkFailed, "That is not the image that was just built."
 
 task echo, "Send the board 64K at 921600 baud and check that it all comes back":
   let
@@ -34,7 +34,7 @@ task echo, "Send the board 64K at 921600 baud and check that it all comes back":
   mkDir work
   for (receive, switches) in [("polled", ""), ("buffered", "-d:buffered")]:
     build(thisDir() / "echo.nim", switches)
-    flash(elf("echo"), memory, port)
+    flash("echo", port)
     # The reset's own chatter, at the boot ROM's baud rate, is read and dropped
     exec "sh -c " & quoteShell("exec 3<>" & port & "; " & resetCommand(port) &
       "; stty 921600 raw -echo -hupcl <&3; sleep 1; timeout 1 cat <&3 >/dev/null" &
@@ -45,18 +45,18 @@ task echo, "Send the board 64K at 921600 baud and check that it all comes back":
 
 proc twoBoards(): seq[string] =
   result = serialPorts()
-  if result.len != 2: quit "This needs two boards attached, and found " & $result.len & "."
+  if result.len != 2: fail noBoard, "This needs two boards attached, and found " & $result.len & "."
 
 task wiring, "Check the wires between two boards":
   let ports = twoBoards()
   # The listener goes on first, so that two boards are never both driving
   build(thisDir() / "wiring.nim")
-  flash(elf("wiring"), memory, ports[1])
+  flash("wiring", ports[1])
   build(thisDir() / "wiring.nim", "-d:drive")
-  flash(elf("wiring"), memory, ports[0])
+  flash("wiring", ports[0])
   let report = capture(ports[1], resetCommand(ports[1]), "BEGIN", "END", 30)
   echo report
-  if "wiring ok" notin report: quit "The boards are not wired as checks/wiring.nim describes."
+  if "wiring ok" notin report: fail checkFailed, "The boards are not wired as checks/wiring.nim describes."
 
 task link, "Two wired boards exchange checksummed buffers over UART and SPI":
   let
@@ -65,9 +65,9 @@ task link, "Two wired boards exchange checksummed buffers over UART and SPI":
   mkDir work
   # In this order whatever the boards ran before, no pin is driven from both ends
   build(thisDir() / "link.nim", "-d:first")
-  flash(elf("link"), memory, ports[0])
+  flash("link", ports[0])
   build(thisDir() / "link.nim")
-  flash(elf("link"), memory, ports[1])
+  flash("link", ports[1])
   # The second board is reset first and waits; the first board's reset starts them
   exec captureCommand(ports[1], resetCommand(ports[1]), "BEGIN", "END", 60) & " > " &
     quoteShell(work / "second.txt") & " & sleep 3"
@@ -77,7 +77,7 @@ task link, "Two wired boards exchange checksummed buffers over UART and SPI":
   echo "The first board:\n", first, "\nThe second board:\n", second
   for report in [first, second]:
     if "uart 200 of 200" notin report or "spi 200 of 200" notin report:
-      quit "The link check FAILED."
+      fail checkFailed, "The link check FAILED."
   echo "The link check passed."
 
 task keywords, "Recognise recorded words, and check the board against the host bit for bit":
@@ -92,7 +92,7 @@ task keywords, "Recognise recorded words, and check the board against the host b
     # 112 MB, once. It is someone else's to hand out, so it is not kept in the repository.
     exec "curl -L --fail -o " & archive & " http://download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz"
     if "cc2a00c1147c2254e9be3fa0f779d8c17421dc349b86366567a8edfa9acd51df" notin gorge("sha256sum " & archive):
-      quit "The test set is not the file this check was written against."
+      fail notSetUp, "The test set is not the file this check was written against."
     exec "tar -xzf " & archive & " -C " & work
     rmFile archive
   if defined(testset):
@@ -102,35 +102,43 @@ task keywords, "Recognise recorded words, and check the board against the host b
   exec host & thisDir() / "keywords.nim"
   let expected = gorge(work / "host").strip
   build(thisDir() / "keywords.nim", paths)
-  flash(elf("keywords"), memory, serialPort())
+  flash("keywords", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END").strip
   echo report
   var got: seq[string]
   for line in report.splitLines:
     if not line.startsWith("time"): got.add line
   if got.join("\n") != expected:
-    quit "\nThe board and the host DISAGREE. The host printed:\n" & expected
+    fail checkFailed, "\nThe board and the host DISAGREE. The host printed:\n" & expected
   echo "\nThe board and the host agree."
 
 task sensors, "Read the board's sensors through their driver packages":
   # The packages are expected checked out beside this repository
   build(thisDir() / "sensors.nim", " --path:" & thisDir() / "../../lutra-lsm6ds33/src" &
     " --path:" & thisDir() / "../../lutra-lis3mdl/src")
-  flash(elf("sensors"), memory, serialPort())
+  flash("sensors", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
   echo report
-  if "FAILED" in report or "END" notin report: quit "The sensor check FAILED."
+  if "FAILED" in report or "END" notin report: fail checkFailed, "The sensor check FAILED."
   echo "\nThe sensor check passed."
+
+task loopback, "The B-L475E-IOT01A's SPI1, through a jumper back to itself":
+  build(thisDir() / "loopback.nim")
+  flash("loopback", serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
+  echo report
+  if "FAILED" in report or "END" notin report: fail checkFailed, "The loopback check FAILED."
+  echo "\nThe loopback check passed."
 
 task wifi, "Publish and subscribe over MQTT, through a second DevKitM-1 running Espressif's AT firmware":
   # The package is expected checked out beside this repository, and the
   # network in the environment, so that it is never written here
-  if not existsEnv("LUTRA_WIFI_NETWORK"): quit "Name the network in LUTRA_WIFI_NETWORK and LUTRA_WIFI_PASSWORD."
+  if not existsEnv("LUTRA_WIFI_NETWORK"): fail notSetUp, "Name the network in LUTRA_WIFI_NETWORK and LUTRA_WIFI_PASSWORD."
   build(thisDir() / "wifi.nim", " --path:" & thisDir() / "../../lutra-espat/src" &
     " " & quoteShell("-d:network=" & getEnv("LUTRA_WIFI_NETWORK")) &
     " " & quoteShell("-d:password=" & getEnv("LUTRA_WIFI_PASSWORD")))
-  flash(elf("wifi"), memory, serialPort())
+  flash("wifi", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 60)
   echo report
-  if "FAILED" in report or "END" notin report: quit "The Wi-Fi check FAILED."
+  if "FAILED" in report or "END" notin report: fail checkFailed, "The Wi-Fi check FAILED."
   echo "\nThe Wi-Fi check passed."

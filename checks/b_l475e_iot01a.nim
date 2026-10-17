@@ -119,6 +119,10 @@ block:
 const expected = checksum(table)
 check "constants", checksum(table) == expected
 
+block:
+  let (a, b, c) = (random(), random(), random())
+  check "random", a != b and b != c and a != c
+
 # The board's sensors share this bus, and none of them may have the address
 # asked here. It has to be refused at once, and a clock line held low has to
 # be given up on.
