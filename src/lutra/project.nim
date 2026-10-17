@@ -18,7 +18,8 @@
 ## `LUTRA_PORT`. `-d:board=...` builds for another board than the one
 ## `config.nims` names.
 ##
-## `monitor` reads until stopped, or takes, before the task's name:
+## `monitor` reads until stopped, or the board stops at a panic or a fault. It
+## takes, before the task's name:
 ##
 ##   -d:reset            Reset the board before reading
 ##   -d:send=AT+GMR      Send a line, ended by CR LF: at once, or a second after the reset
@@ -132,7 +133,7 @@ proc flashedRecord(port: string): string =
   buildDir() / "flashed" / gorge("readlink -f " & quoteShell(port)).lastPathPart
 
 proc monitorCommand(port, addr2line: string): string =
-  ## What `nim monitor` runs. It leaves the reader's status in a file.
+  ## What `nim monitor` runs, whose status is the reader's
   putEnv("LUTRA_SEND", send)
   putEnv("LUTRA_UNTIL", until)
   putEnv("LUTRA_READER", monitorReader)

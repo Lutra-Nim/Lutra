@@ -133,6 +133,7 @@ Run from `checks/`. With two boards of one kind attached, those for one board ne
 | `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository |
 | `nim sensors` | Reads an LSM6DS33 and a LIS3MDL on IO18 and IO19 through their driver packages, checked out beside this repository. On the B-L475E-IOT01A, the LIS3MDL the board carries |
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
+| `nim loopback` | On the B-L475E-IOT01A only, with a jumper from D11 to D12: SPI1 brings back what it sends |
 | `nim wiring` | Checks the wires between two boards, listed at the top of [checks/wiring.nim](checks/wiring.nim) |
 | `nim link` | The two boards exchange checksummed buffers over UART and SPI |
 | `nim wifi` | Publishes and subscribes through test.mosquitto.org, over Wi-Fi through a second DevKitM-1 running Espressif's AT firmware, wired as for `nim wiring`. Needs `lutra-espat` checked out beside this repository, and the network in `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD` |

@@ -3,8 +3,8 @@
 # in Nim's raises a Defect: that allocates the Defect and its message, and
 # with no heap fails to link. These are templates, so the message, which the
 # caller builds with `&` and `$`, is never made. What is said is Nim's own
-# text when it is a literal, or the Defect's name. `lutraPanic` is the board's,
-# from `reportPanics`.
+# text when it is a literal, a plain account of an index, a range or a field,
+# or else the Defect's name. `lutraPanic` is the board's, from `reportPanics`.
 
 {.push profiler: off.}
 
@@ -16,8 +16,8 @@ proc lutraPanic(what: cstring, at: pointer) {.importc, cdecl, noreturn.}
 
 template sysFatal(exceptn: typedesc[Defect], message: untyped) =
   # Called from a procedure of Nim's that the failed check called, so its
-  # return address is just after the check's call. On ARM it says Thumb. An assertion's message already
-  # says where it is.
+  # return address is just after the check's call; on ARM its low bit says
+  # Thumb. An assertion's message already says where it is.
   var at {.noinit.}: pointer
   {.emit: [at, " = (char *)((NU)__builtin_return_address(0) & ~1u) - 2;"].} # Inside the call
   when exceptn is AssertionDefect: lutraPanic(cstring(message), nil)
