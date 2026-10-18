@@ -45,13 +45,19 @@ Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT
 
 On 16 and 17 October, on the branch `feature/agents`, in the order the author chose: the repositories moved to the `Lutra-Nim` organisation (§8); bounded commands, exit codes, `nim doctor` and `AGENTS.md` (§4.4); a panic report, with Nim's checks on by default (§5.6); and two rounds of the libraries in §8.1. Then code for the B-L475E-IOT01A's second UART, receiving through an interrupt, SPI and random numbers (§7). That branch is merged.
 
-Later on 17 October, in one session with the B-L475E-IOT01A and the sensor board's DevKitM-1 attached: everything written for the B-L475E-IOT01A ran, and two bugs were fixed on the way (§11, M5); the tasks stopped needing `sh`, `stty` and `awk`, through a program for the host, `lutra/host/monitor` (§4.3); filters, statistics, trigonometry and a spectrum (§8.1); and the watchdog, the reset reason and `restart` on both boards (§7), with a check of their own, `nim resets`.
+Later on 17 October, on the branch `feature/libs-and-watchdog`, in one session with the B-L475E-IOT01A and the sensor board's DevKitM-1 attached: everything written for the B-L475E-IOT01A ran, and two bugs were fixed on the way (§11, M5); the tasks stopped needing `sh`, `stty` and `awk`, through a program for the host, `lutra/host/monitor` (§4.3); filters, statistics, trigonometry and a spectrum (§8.1); the watchdog, the reset reason and `restart` on both boards (§7), with a check of their own, `nim resets`; and `nim capture` no longer takes records from before a reset (§8.2). The session ended by putting the next steps to the author, below, and noting ideas for later (§11, "Later").
 
-Where to pick up:
+Where to pick up, in the order the author agreed on 17 October:
 
-1. **Run what needs the AT module.** `nim wifi` through the B-L475E-IOT01A's UART4: the sensor board's DevKitM-1 unplugged, the AT module's plugged in, and its IO6, IO7 and ground wired to the B-L475E-IOT01A's D1, D0 and ground in place of the D0 to D1 jumper. Then, with both DevKitM-1 attached, `nim wiring` and `nim link`, which have not run since the tasks changed (§4.3).
-2. **Try the tasks on Windows and macOS** on a real machine, if the author has one: `nim doctor`, `nim flash`, `nim monitor -d:reset`, `nim capture`. Whether the ports are found by their drivers' names on Windows is a guess (§4.3).
-3. **Next, by the order proposed on 14 October:** flash storage and the settings store, whose shape is to be put to the author first (below); the gesture demo, which now has its filters and a spectrum and needs only a model and a window of samples; then making Lutra installable and listing it in Nimble's packages (§8). Of §4.4, a host board and `nim size --budget` are left.
+1. **Make Lutra installable by Nimble**, and list it and the three driver packages in Nimble's own list (§8). It is what a release most needs: the drivers, their examples, `nim sensors` and `nim wifi` all find each other as checkouts side by side, and `nimble install` has never been tried (Appendix B, on `installExt`). No hardware.
+2. **Loose ends, together with the first:**
+   - `nim wifi` through the B-L475E-IOT01A's UART4: the sensor board's DevKitM-1 unplugged, the AT module's plugged in, and its IO6, IO7 and ground wired to the B-L475E-IOT01A's D1, D0 and ground in place of the D0 to D1 jumper.
+   - With both DevKitM-1 attached, `nim wiring` and `nim link`, which have not run since the tasks changed (§4.3).
+   - Steady's other five models on both boards, with `nim -d:model=... steady`: §10's acceptance test for a board, of which only `kws` has run.
+   - The tasks on a real Windows or macOS machine, if the author has one: `nim doctor`, `nim flash`, `nim monitor -d:reset`, `nim capture`. Whether Windows ports are found by their drivers' names is a guess (§4.3).
+3. **Keyword spotting from a live microphone**, on the B-L475E-IOT01A's own two MP34DT01s, through its DFSDM. The author has no I2S microphone, so the C3 waits. The front-end and Steady's `kws` already agree with the host bit for bit (`nim keywords`), so the new work is the DFSDM and a window of samples. This was M3's exit before it was reshaped (§11, M3).
+4. **The board answering aloud**: the STM32L475's DAC, on PA4 or PA5, played from a timer, with the answers to the twelve words rendered on the host by TinyTTS and kept in flash as 4-bit ADPCM, about 4 KB a second (§11, "Later"). Ask first what the author's speaker is: a bare one needs a transistor or a small amplifier, such as a PAM8302.
+5. **Then:** flash storage and the settings store, whose shape is to be put to the author first (below); the gesture demo, which has its filters and a spectrum and needs a model and the window of samples; PWM and ADC on both boards before a release; sleep, with the battery demo. Of §4.4, a host board and `nim size --budget` are left.
 
 - **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11).
 - **Left by earlier milestones**, and worth going back to before a release: the table at the end of §11, M5.
@@ -1107,6 +1113,7 @@ Begun October 2026. Tasks, timer events and data capture were the branch `featur
 - Wi-Fi, for MQTT, is the author's second DevKitM-1 running Espressif's AT firmware, wired to the first by the wires M2 left, rather than the B-L475E-IOT01A's own module, which needs an SPI driver for that chip and speaks a command set of Inventek's own. That module may come later, as a second `Socket`. LoRa is an RFM95W, an SX1276 at 915 MHz, not yet soldered.
 - For MQTT the author took each recommendation but one: Lutra's own client over `Socket`, not the firmware's; the ESP-AT driver as a package of its own, the AT engine in Lutra; messages through a loop in a task. He asked for subscribing in the first piece, with publishing (§8.3).
 - The Wi-Fi network is given when a program is built, from `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD`, until the settings store can hold it.
+- Later on 17 October the author agreed the next steps (§1.2): Nimble and the loose ends, then keyword spotting from the B-L475E-IOT01A's microphones, then its answering aloud, ahead of flash storage, PWM and ADC. Several cores, speech and clusters are noted for later (§11, "Later").
 - On 17 October the author took every recommendation: tasks with no shell tools through a Nim program for the host, rather than a Python script on `pyserial` or Linux and macOS only (§4.3); four of §8.1's five libraries, each in the shape recommended; a jumper for UART4 as for SPI1, so that both are checked without the AT module; and, of what was left, the watchdog and the reset reason (§7), rather than flash storage or PWM and ADC.
 - On 16 October the author took, in this order: the tooling for agents (§4.4), the panic report (§5.6), the libraries of §8.1, and then the B-L475E-IOT01A's missing pieces, in one swap of cables. Each shape was his choice among two or three, and he took the recommended one each time: `-d:` defines for `monitor`; print and halt on a failed check, with checks on and hot modules turning theirs off; a `Text` written to, `std/parseutils`' names, `log.info`; button changes in a task's loop, `json(name = value)`, generators and backoffs as values kept.
 
@@ -1175,6 +1182,38 @@ Three use models Steady already runs on the C3.
 | Battery anomaly sensor | Sleep, sample, `ad` model, LoRa packet only on an anomaly |
 | Krill | The cluster language model, as the flagship |
 
+### Later
+
+**Proposed**, 17 October 2026, from talking it over with the author, and not yet agreed. Nothing here is measured unless it says so.
+
+**Speech out.** The author would like a board to speak, through a small speaker on a breadboard.
+
+- **TinyTTS** (`github.com/tronghieuit/tiny-tts`, Apache-2.0) is the smallest neural voice found: by its README, 1.6M parameters, about 3.4 MB as FP16 ONNX, 44.1 kHz out, 53 times faster than real time on a laptop's CPU. Its words become phonemes through the CMU dictionary and `g2p_en`, a neural model of about 4.4 MB. Its training code is not yet published.
+- **On these boards it is not practical as it is.** Even at 8 bits it does not fit the STM32L475's 1 MB of flash; it would fit the C3's 4 MB. Estimated from its size and not measured, either board would be 10 to 30 times slower than real time, mostly in making the waveform. A sentence of 4.9 s at 44.1 kHz is 215 KB, against 128 KB of RAM. Its output's length depends on the text, where Steady compiles for fixed shapes, and it would need operators Steady may not have.
+- **What is practical now**: the board's answers rendered on the host by TinyTTS, at 8 kHz, and kept in flash as 4-bit ADPCM, about 4 KB a second, played through the STM32L475's 12-bit DAC from a timer. With keyword spotting from the board's microphones, the board hears one of twelve words and answers aloud, on one board and with no network (§1.2).
+- **Real speech from text on the board** would be rules: English letters to phonemes by the US Naval Research Laboratory's rules of 1976, and a formant synthesiser after Klatt, in whole numbers, a few KB of tables. It runs in real time on both boards and sounds like a robot. SAM, the famous one, has no clear licence, and Speak & Spell's words are TI's. Its own package, as `lutra_espat` is.
+- **Next step, if wanted:** count TinyTTS's operators and its multiplications per second of sound from the ONNX file, which settles how far from real time each board is.
+
+**Several cores.** Lutra supports none yet; nothing in it rules them out.
+
+- Tasks would be bound to a core when the program is compiled, as `proc sample() {.task: core1.}`, each core with its own scheduler. A peripheral used from two cores would be a compile error, as a pin claimed twice is (§5.4). `critical:` would take one of the chip's hardware spinlocks as well. A ring or the chip's FIFOs between cores would carry data across.
+- For TinyML: one core samples and computes features while the other runs the model, each on half of a double buffer.
+- The RP2350 of the Raspberry Pi Pico 2 has two cores that run as Cortex-M33 or as RISC-V; the RISC-V side would reuse `arch/riscv32`. The RP2040's Cortex-M0+ cores are ARMv6-M, which `arch/armv7m` does not cover. Either Pico needs Raspberry Pi's Debug Probe for flashing and a console, as it has no USB bridge (§11, M4, on the ItsyBitsy).
+
+**Clusters, for Krill.** Krill is to be a family of small language models for clusters of microcontrollers of different sizes. Krill must never wait on Lutra (§2); what Lutra can give it:
+
+- Flashing and reading many boards at once, and choosing one by its MAC address (§4.3, not built).
+- Scatter, gather and all-reduce over the SPI target with DMA and `framing`, which `nim link` already exercises.
+- A speech model divides across boards more easily than a language model. Its decoder, where the work is, makes any stretch of sound from its stretch of frames and a little either side, so each board can make its own stretch with the whole decoder in its flash. Little crosses the links: the frames out, likely tens of KB per second of sound, and the sound back, 8 to 16 KB a second at 8 kHz. Sixteen C3s might come near real time, by the estimate above.
+
+**A larger board**, when one is wanted, and the third chip that §11, M4's leftovers wait for:
+
+| Chip | Why |
+|---|---|
+| STM32H7 | A Cortex-M7 at 480 MHz with about 1 MB of RAM. ARMv7E-M, so it reuses `arch/armv7m`: the cheapest to add, and the likeliest to run TinyTTS alone |
+| ESP32-P4 | Two RISC-V cores at 400 MHz, with vector instructions for int8 and PSRAM. Reuses `arch/riscv32`, has peripherals like the C3's, and brings several cores. No Wi-Fi of its own |
+| RP2350 | Two cores, cheap, small (above) |
+
 ---
 
 ## 12. Open questions and risks
@@ -1184,7 +1223,7 @@ Three use models Steady already runs on the C3.
 - Which SVD generator to use, and whether generated register files are checked in. The C3 has about sixty hand-written addresses now, and each new peripheral adds several.
 - How the heap opt-in is expressed.
 - Whether `static` parameters cause unacceptable code duplication when a program uses several instances of one peripheral.
-- What a sampling pipeline and data capture look like (§11, M5).
+- What a window of samples, handed to a model, looks like. Data capture is settled (§8.2); the window is best designed with the microphone or the gesture model in hand (§1.2).
 
 **Known gaps, none blocking:**
 
@@ -1443,6 +1482,8 @@ timeout 5 cat /dev/ttyUSB0
 - `pyocd` 0.45.1: `~/Documents/GitHub/Steady/.venv/bin/pyocd`, beside `esptool`. Not on `PATH`, so `export PYOCD=~/Documents/GitHub/Steady/.venv/bin/pyocd`. It reaches the probe without `sudo`; Steady's `tests/mcu/boards/stm32l475/board.sh` has the udev rule that allows that. A `pyocd` installed by `pipx` is now on `PATH` too, and is found without it.
 - The ARM compiler is Ubuntu's `arm-none-eabi-gcc` 10.3.1, on `PATH`, with its `newlib`.
 - `pyocd commander -t stm32l475xg -c halt -c "reg pc" -c "read32 0x40021000 16" -c go` reads the chip's registers while a program runs, which is how the first silent console was explained.
+- The Windows build of `lutra/host/monitor` was tried from this machine, on 17 October, and nothing of it was kept: Zig, from `pip install ziglang` in a scratch virtual environment, as Nim's C compiler (`--os:windows --cpu:i386 --cc:clang` with `clang.exe` a script running `python -m ziglang cc -target x86-windows-gnu`), and Ubuntu's Wine 6, whose prefix is 32-bit. Wine maps COM ports from `HKLM\Software\Wine\Ports`, set with `wine reg add 'HKLM\Software\Wine\Ports' /v COM5 /d /dev/ttyACM0`; a link written in `dosdevices` by hand is replaced when Wine starts. The same Zig, with `-target aarch64-macos`, links the macOS build.
+- The author has no I2S microphone, and has a small speaker for a breadboard, of a kind not yet known (§11, "Later").
 
 ---
 

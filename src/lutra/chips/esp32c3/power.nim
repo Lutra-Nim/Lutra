@@ -18,7 +18,6 @@ const
   resetLength = (7'u32 shl 18) or (7'u32 shl 15) # The longest, 3.2 us
 
 proc arm(ticks: static uint64) =
-  when ticks < 1 or ticks > uint32.high: {.error: "The watchdog waits from 1 ms to 49 days.".}
   timerWatchdogProtect[] = key
   timerWatchdogPrescale[] = 40_000'u32 shl 16 # A millisecond of the crystal
   timerWatchdogStage0[] = uint32(ticks)
@@ -31,7 +30,10 @@ template start*(w: static Watchdog, within: static Duration) =
   ## From here on the chip starts again unless `feed` is called at least
   ## once every `within`. It can't be stopped.
   once("Starting the watchdog", at(instantiationInfo()))
-  arm(uint64(within) div 1000) # In milliseconds
+  const ticks = uint64(within) div 1000 # In milliseconds
+  when ticks < 1 or ticks > uint32.high:
+    {.error: "The watchdog waits from 1 ms to 49 days" & at(instantiationInfo()).}
+  arm(ticks)
 
 proc feed*(w: static Watchdog) =
   ## Gives the program another `within` before the chip starts again

@@ -37,7 +37,8 @@ template start*(w: static Watchdog, within: static Duration) =
   ## once every `within`. It can't be stopped.
   once("Starting the watchdog", at(instantiationInfo()))
   const s = setting(within)
-  when s.prescale > 6 or uint64(within) < 125: {.error: "The watchdog waits from 125 us to 32 s.".}
+  when s.prescale > 6 or uint64(within) < 125:
+    {.error: "The watchdog waits from 125 us to 32 s" & at(instantiationInfo()).}
   arm(s.prescale, s.reload)
 
 proc feed*(w: static Watchdog) =
