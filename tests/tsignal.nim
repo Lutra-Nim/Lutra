@@ -66,3 +66,25 @@ for (tone, toneLevel, noiseLevel, fullScale, within) in [
   for k in 0..<10:
     doAssert abs(got[k].float / 65536 - want[k]) < within, $tone & " Hz, coefficient " & $k & ": " &
       $(got[k].float / 65536) & " rather than " & $want[k]
+
+block: # The spectrum, against the same transform in floating point
+  var
+    samples: array[256, int16]
+    strength: array[128, int32]
+  for (hz, amplitude) in [(12.5, 1000.0), (31.0, 20000.0), (3.3, 7.0)]:
+    for n in 0..<256:
+      samples[n] = int16(round(amplitude * sin(2 * PI * hz * n.float / 100) + 300 * noise()))
+    spectrum(samples, strength)
+    for k in 0..<128:
+      var sum = complex(0.0, 0.0)
+      for n in 0..<256:
+        let windowed = samples[n].float * (0.5 - 0.5 * cos(2 * PI * n.float / 256))
+        sum += windowed * exp(complex(0.0, -2 * PI * k.float * n.float / 256))
+      doAssert abs(strength[k].float - abs(sum) * 4 / 256) <= 1, $hz & " Hz, bin " & $k
+    # A sine on a bin shows at its amplitude
+    let bin = int(round(hz * 256 / 100))
+    if hz == 12.5: doAssert abs(strength[bin].float - amplitude) < 0.03 * amplitude
+  var fewer: array[100, int16]
+  doAssertRaises(AssertionDefect): spectrum(fewer, strength)
+  var re, im: array[6, int32]
+  doAssert not compiles(fft(re, im)) # Not a power of two

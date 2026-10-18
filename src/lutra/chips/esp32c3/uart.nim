@@ -12,13 +12,16 @@ template clockConfig(uart: Uart): Reg = Reg(uart.base + uartClockConfig)
 
 template waiting(uart: Uart): uint32 = uart.status[] and 0x3ff # In the receive FIFO
 
-proc setBaud*(uart: static Uart, baud: uint32) =
-  # What was sent at the old rate goes first, the last byte included, which
-  # leaves the FIFO a byte's time before it is out on the line
+proc flush*(uart: static Uart) =
+  ## Waits until what was sent is out on the line, the last byte included,
+  ## which leaves the FIFO up to two bytes' time before it is
   while (uart.status[] shr 16 and 0x3ff) > 0: discard
-  let byteTime = 10 * (uart.clockDivider[] and 0xfff) div 40 + 1 # In microseconds
+  let twoBytes = 20 * (uart.clockDivider[] and 0xfff) div 40 + 1 # In microseconds
   let began = micros()
-  while micros() - began < byteTime: discard
+  while micros() - began < twoBytes: discard
+
+proc setBaud*(uart: static Uart, baud: uint32) =
+  uart.flush() # What was sent at the old rate goes first
   # Ports are clocked from the 40 MHz crystal, so the core's clock does not
   # come into it. The divider has four fractional bits.
   let divider = 40_000_000'u32 * 16 div baud

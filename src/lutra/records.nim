@@ -8,13 +8,24 @@
 ## each line of the program, and every hundredth after, sends the names of its
 ## columns first: a value's name if it is given one, or else the expression
 ## itself. Sending them again lets a capture recover from losing the first.
+## Before the program's first record goes a packet saying it has started, by
+## which a capture tells its records from those sent before a reset.
 
 import std/[macros, strutils]
-import framing
+import framing, hal/bytelink
 
 const
   namesKind* = 0'u8 ## A packet of column names, separated by commas
   valuesKind* = 1'u8 ## A packet of values, each a varint
+  startKind* = 2'u8 ## The program has started, and its records follow
+
+var started: bool
+
+proc start(link: static ByteLink) =
+  ## Says so before the program's first record
+  if not started:
+    started = true
+    sendFrame(link, [startKind])
 
 func zigzag*(value: int64): uint64 =
   ## Small numbers of either sign as small unsigned ones
@@ -50,6 +61,7 @@ macro record*(link: untyped, values: varargs[untyped]): untyped =
     at = genSym(nskVar, "at")
     count = genSym(nskVar, "count")
     (putVarint, sendFrame, valuesKind) = (bindSym"putVarint", bindSym"sendFrame", bindSym"valuesKind")
+    start = bindSym"start"
   var puts = newStmtList()
   for value in values:
     let (name, expression) =
@@ -66,6 +78,7 @@ macro record*(link: untyped, values: varargs[untyped]): untyped =
     block:
       var `count` {.global.}: uint8
       if `count` == 0:
+        `start`(`link`)
         const names: array[`headerBytes`.len, byte] = `headerBytes`
         `sendFrame`(`link`, names)
       `count` = (`count` + 1) mod 100

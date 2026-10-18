@@ -29,7 +29,7 @@
 ##
 ## Every task ends with one of the codes of `Exit`, in `lutra/tooling`.
 
-import std/[macros, os, strutils, algorithm]
+import std/[macros, os, strutils, algorithm, hashes]
 import tooling
 export tooling
 
@@ -74,14 +74,55 @@ proc compile*(program: string, switches = "") =
 
 var portNames: seq[string] ## How the host names the port of the board's console
 
+proc hostProgram*(program: string, sources: openArray[string]): string =
+  ## A program for the host, built the first time it is needed. It is named
+  ## after its sources, so that a changed one is built again.
+  var text = ""
+  for file in sources: text.add readFile(file)
+  result = buildDir() / program.splitFile.name & "-" & toHex(hash(text).uint32) & ExeExt
+  if not fileExists(result):
+    mkDir buildDir()
+    try:
+      exec quoteShell(getCurrentCompilerExe()) & " c --skipProjCfg --hints:off -d:release --path:" &
+        quoteShell(source) & " --nimcache:" & quoteShell(buildDir() / "nimcache" / program.splitFile.name) &
+        " --out:" & quoteShell(result) & " " & quoteShell(program)
+    except OSError: fail buildFailed, "Error: " & program.lastPathPart & " did not build for the host."
+
+proc helper(): string =
+  ## The host's side of the console, `lutra/host/monitor`
+  var sources: seq[string]
+  for file in ["host/monitor", "host/serialport", "framing", "records", "crc", "tooling"]:
+    sources.add source / "lutra" / file & ".nim"
+  hostProgram(source / "lutra/host/monitor.nim", sources)
+
+proc helperCommand(arguments: openArray[string]): string =
+  result = quoteShell(helper())
+  for argument in arguments: result.add " " & quoteShell(argument)
+
+proc run(arguments: varargs[string]): Exit =
+  ## Runs the helper, printing what it prints, and gives how it ended
+  let status = buildDir() / "monitor.status"
+  rmFile status
+  try: exec helperCommand(@arguments & ("--status=" & status))
+  except OSError: discard # Its status says how
+  if not fileExists(status): return noBoard
+  Exit(readFile(status).strip.parseInt)
+
 proc serialPorts*(): seq[string] =
   ## Every port the board could be on, in order
-  for file in listFiles("/dev"):
+  for listed in gorge(helperCommand(["--list"])).splitLines:
+    let fields = listed.split('\t')
+    if fields.len != 2: continue
+    # On Windows the kind of port is in its device's name, \Device\Silabser0
+    let (name, device) = (fields[0], fields[1].replace('\\', '/').lastPathPart)
     for prefix in portNames:
-      if file.extractFilename.startsWith(prefix): result.add file
+      if name.lastPathPart.startsWith(prefix) or device.startsWith(prefix): result.add name
   result.sort()
 
+var chosenPort: string
+
 proc serialPort*(): string =
+  if chosenPort != "": return chosenPort
   result = if namedPort != "": namedPort else: getEnv("LUTRA_PORT")
   if result == "":
     let found = serialPorts()
@@ -89,73 +130,37 @@ proc serialPort*(): string =
       fail noBoard, "Expected one serial port and found " & $found.len & " " & $found &
         ". Name the board's with -d:port=... or LUTRA_PORT."
     result = found[0]
-  elif gorgeEx("test -e " & quoteShell(result)).exitCode != 0: # A device is no file to `fileExists`
-    fail noBoard, "There is no serial port " & result & "."
+  else:
+    let (why, code) = gorgeEx(helperCommand(["--check=" & result]))
+    if code != 0: fail noBoard, "Error: " & why
+  chosenPort = result
 
-proc console(port, resetCommand, reader: string): string =
-  ## A shell command that reads a board's console. The port is opened once and
-  ## held, so that nothing sent after a reset is lost before reading starts.
-  ## What was sent before is dropped: a debug probe keeps it until the port is
-  ## opened.
-  let mode = "stty " & $baud & " raw -echo -hupcl <&3; "
-  "exec 3<>" & port & "; " & mode & "timeout 0.2 cat <&3 >/dev/null; " & resetCommand & "; " &
-    mode & "{ " & reader & "; } <&3"
-
-proc seconds(duration: string): string =
-  ## `-d:timeout` as `timeout` the command takes it
+proc milliseconds(duration: string): int =
+  ## `-d:timeout` as the helper takes it
   try:
-    if duration.endsWith("ms"): return $(duration[0..^3].parseInt / 1000)
-    if duration[^1] in {'s', 'm'}: return $duration[0..^2].parseInt & duration[^1]
+    if duration.endsWith("ms"): return duration[0..^3].parseInt
+    if duration.endsWith("s"): return duration[0..^2].parseInt * 1000
+    if duration.endsWith("m"): return duration[0..^2].parseInt * 60_000
   except ValueError: discard
   fail buildFailed, "Error: -d:timeout=" & duration & " should be as 30s, 500ms or 2m."
 
-const monitorReader = """
-  # Prints the console, naming the line of the program an address of a panic
-  # or a fault is in. Ends with 0 at `until`, 2 at a panic or a fault, which
-  # stop the board, and 1 if the port closes.
-  BEGIN { until = ENVIRON["LUTRA_UNTIL"]; elf = ENVIRON["LUTRA_ELF"]; tool = ENVIRON["LUTRA_ADDR2LINE"] }
-  { sub(/\r$/, "") }
-  elf != "" && /^(Panic|Fault): |^ +last call from / && match($0, /(at|from) 0x[0-9a-f]+/) {
-    address = substr($0, RSTART, RLENGTH); sub(/.* /, "", address)
-    where = ""; command = tool " -e " elf " " address; command | getline where; close(command)
-    sub(/ .*/, "", where); sub(/.*\//, "", where)
-    if (where !~ /^\?/ && sub(/:/, "(", where)) $0 = $0 ", " where ")"
-  }
-  { print; fflush() }
-  until != "" && index($0, until) { done = 1; exit 0 }
-  fault || /^Panic: / { done = 1; exit 2 }
-  /^Fault: / { fault = 1 }
-  END { if (!done) exit 1 }
-"""
+proc captureArguments(port, resetCommand, first, last, file: string, seconds: int): seq[string] =
+  @["--port=" & port, "--reset=" & resetCommand, "--from=" & first, "--until=" & last,
+    "--timeout=" & $(seconds * 1000), "--out=" & file]
 
-proc flashedRecord(port: string): string =
-  ## Where `flash` notes which program went to the board on `port`
-  buildDir() / "flashed" / gorge("readlink -f " & quoteShell(port)).lastPathPart
-
-proc monitorCommand(port, addr2line: string): string =
-  ## What `nim monitor` runs, whose status is the reader's
-  putEnv("LUTRA_SEND", send)
-  putEnv("LUTRA_UNTIL", until)
-  putEnv("LUTRA_READER", monitorReader)
-  putEnv("LUTRA_ADDR2LINE", addr2line)
-  putEnv("LUTRA_ELF", if addr2line != "" and fileExists(flashedRecord(port)): readFile(flashedRecord(port)) else: "")
-  # After a reset the line waits a second, for the program to be running
-  if send != "": result = (if resetFirst: "sleep 1; " else: "") & "printf '%s\\r\\n' \"$LUTRA_SEND\" >&3; "
-  if timeout != "": result.add "timeout " & seconds(timeout) & " "
-  result.add "env LC_ALL=C awk \"$LUTRA_READER\"" # Bytes, whatever they are
-
-proc captureCommand*(port, resetCommand, first, last: string, seconds = 120): string =
-  ## A shell command that resets a board and prints what it prints, from the
-  ## line containing `first` to the one containing `last`
-  putEnv("LUTRA_FIRST", first)
-  putEnv("LUTRA_LAST", last)
-  # Each line is flushed, so that a board that stops half way still shows how far it got
-  let reader = "timeout " & $seconds & " awk 'index($0, ENVIRON[\"LUTRA_FIRST\"]) { on = 1 } " &
-    "on { print; fflush() } on && index($0, ENVIRON[\"LUTRA_LAST\"]) { exit }'"
-  "sh -c " & quoteShell(console(port, resetCommand, reader))
+proc captureCommand*(port, resetCommand, first, last, file: string, seconds = 120): string =
+  ## A command that does what `capture` does, writing to `file`
+  helperCommand(captureArguments(port, resetCommand, first, last, file, seconds))
 
 proc capture*(port, resetCommand, first, last: string, seconds = 120): string =
-  gorge(captureCommand(port, resetCommand, first, last, seconds)).replace("\r", "")
+  ## Resets a board and prints what it prints, from the line containing
+  ## `first` to the one containing `last`, and gives that too. A panic, or
+  ## `last` not seen in time, is a failed check.
+  let file = buildDir() / "capture.txt"
+  rmFile file
+  if run(captureArguments(port, resetCommand, first, last, file, seconds)) == noBoard:
+    quit ord(noBoard) # The helper has said why
+  result = if fileExists(file): readFile(file).strip(leading = false) else: ""
 
 proc problems(compiler, flasher: Tool): seq[string] =
   ## What `nim doctor` finds missing, printing what it checks as it goes
@@ -168,18 +173,12 @@ proc problems(compiler, flasher: Tool): seq[string] =
   for tool in [compiler, flasher]:
     line tool.path != "", tool.name, (if tool.path != "": tool.path else: tool.install)
     if tool.path == "": result.add tool.name
-  for exe in ["sh", "stty", "awk", "timeout"]:
-    if findExe(exe) == "":
-      line false, exe, "The tasks need it, and so Linux for now."
-      result.add exe
   let ports = serialPorts()
   if ports.len == 0: note "No board attached"
   for port in ports:
-    let usable = gorgeEx("test -r " & port & " -a -w " & port).exitCode == 0
-    line usable, port, (if usable: "" else: "You can't open it. Join its group, " &
-      gorge("stat -c %G " & port) & ", with `sudo usermod -aG " & gorge("stat -c %G " & port) &
-      " $USER`, then log in again.")
-    if not usable: result.add port
+    let (why, code) = gorgeEx(helperCommand(["--check=" & port]))
+    line code == 0, port, why.strip
+    if code != 0: result.add port
   if ports.len > 1:
     note $ports.len & " boards attached: name one with -d:port=... or LUTRA_PORT"
 
@@ -229,8 +228,7 @@ template board*(default: static string) =
     ## Writes a built program to the board, and notes which it was
     try: flash(elf(program), memory, port)
     except OSError: fail noBoard, "Error: nothing was written to the board on " & port & "."
-    mkDir buildDir() / "flashed"
-    writeFile(flashedRecord(port), elf(program))
+    exec helperCommand(["--port=" & port, "--note=" & buildDir() / "flashed", "--elf=" & elf(program)])
 
   task flash, "Build a program and write it to the board":
     need flasher()
@@ -240,28 +238,19 @@ template board*(default: static string) =
   task monitor, "Read the board's console. -d:until=..., -d:timeout=... and -d:send=... end it":
     let
       port = serialPort()
-      status = buildDir() / "monitor.status"
-      gcc = compiler().path
-      addr2line = if gcc.endsWith("gcc"): gcc[0 ..< ^3] & "addr2line" else: "" # Beside it
-    mkDir buildDir()
-    rmFile status
-    exec "sh -c " & quoteShell(console(port, if resetFirst: resetCommand(port) else: "true",
-      monitorCommand(port, addr2line)) & "; echo $? > " & quoteShell(status))
-    case (if fileExists(status): readFile(status).strip else: "")
-    of "0": discard
-    of "2": fail checkFailed, "\nThe board stopped."
-    of "124":
-      if until != "": fail checkFailed, "\nThe board did not print " & until & " within " & timeout & "."
-    else: fail noBoard, "\nThe board on " & port & " could not be read."
+      (dir, file, ext) = compiler().path.splitFile
+      addr2line = if file.endsWith("gcc"): dir / file[0 ..< ^3] & "addr2line" & ext else: "" # Beside it
+    var arguments = @["--port=" & port, "--baud=" & $baud, "--flashed=" & buildDir() / "flashed",
+      "--addr2line=" & addr2line]
+    if resetFirst: arguments.add "--reset=" & resetCommand(port)
+    if send != "": arguments.add "--send=" & send
+    if until != "": arguments.add "--until=" & until
+    if timeout != "": arguments.add "--timeout=" & $milliseconds(timeout)
+    quit ord(run(arguments)) # The helper has said what went wrong
 
   task capture, "Reset the board and write its records as CSV: nim capture > data.csv":
-    # The board's records go to stdout and the rest to stderr, so nothing
-    # else may go to stdout
-    let decoder = buildDir() / "capture"
-    exec getCurrentCompilerExe() & " c --skipProjCfg --hints:off -d:release --path:" & source &
-      " --nimcache:" & buildDir() / "nimcache/capture" & " --out:" & decoder & " " &
-      source / "lutra/capture.nim" & " >&2"
-    exec "sh -c " & quoteShell(console(serialPort(), resetCommand(serialPort()), quoteShell(decoder)))
+    # The board's records go to stdout and the rest to stderr
+    quit ord(run("--port=" & serialPort(), "--reset=" & resetCommand(serialPort()), "--records"))
 
   task size, "Build a program and show what each memory region holds":
     build(program())
@@ -276,7 +265,6 @@ template board*(default: static string) =
     flash(check, serialPort())
     let got = capture(serialPort(), resetCommand(serialPort()),
       expected.splitLines[0], expected.splitLines[^1]).strip
-    echo got
     if not got.startsWith(expected): # The last line may go on, with the address of a fault
       fail checkFailed, "\nThe self-check FAILED. It should have printed:\n" & expected
     echo "\nThe self-check passed."

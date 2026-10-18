@@ -29,12 +29,17 @@ proc init*(uart: static Uart, tx, rx: static Gpio, baud: uint32) =
   # There is room for one byte. Left to itself the port goes deaf once a byte
   # arrives with the last unread, so it is told to keep the newer instead.
   Reg(uart.base + uartControl3)[] = 1 shl 12
-  uart.control[] = portOn or receiver or transmitter
+  # `buffer` may have come first, and asked for the interrupt
+  uart.control[] = uart.control[] and receivedInterrupt or portOn or receiver or transmitter
+
+proc flush*(uart: static Uart) =
+  ## Waits until what was sent is out on the line, the last byte included
+  while (uart.status[] and sent) == 0: discard
 
 proc setBaud*(uart: static Uart, baud: uint32) =
-  # What was sent at the old rate goes first, the last byte included. The
-  # rate can only be changed with the port off.
-  while (uart.status[] and sent) == 0: discard
+  # What was sent at the old rate goes first. The rate can only be changed
+  # with the port off.
+  uart.flush()
   let was = uart.control[]
   uart.control[] = was and not portOn
   Reg(uart.base + uartBaud)[] = cpuHz div baud
@@ -85,5 +90,7 @@ template buffer*(uart: static Uart, size: static int) =
       discard uart.ring(size)[].push(uart.received)
   discard cast[pointer](handler) # Inside a procedure, Nim leaves out one nothing refers to
 
+  # Before `init`, as it may be, the port takes nothing in until it has its clock
+  switchOn(if uart.bus == 1: apb1Clocks else: apb2Clocks, uart.clockBit)
   uart.control[] = uart.control[] or receivedInterrupt
   enable(uart.interrupt)

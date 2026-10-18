@@ -39,7 +39,7 @@ Every task ends with one of these codes, kept stable (`Exit` in [src/lutra/tooli
 
 ## Confirming a change
 
-Without a board: each `tests/t*.nim`, with `nim r` from `tests/`, and `nim build` of the examples for both boards. A change to the host side is confirmed by running the task it changes.
+Without a board: each `tests/t*.nim`, with `nim r` from `tests/`, and `nim build` of the examples for both boards. A change to the host side is confirmed by running the task it changes. The tasks run on Linux, macOS and Windows, with no shell tools: what NimScript can't do is in `src/lutra/host/monitor.nim`, which they build. Keep shell syntax out of a task's commands; `quoteShell` each argument.
 
 With a board, from `checks/`: `nim selfcheck` (45 s) for each board touched. The table in design.md §1.2 lists every check, what it proves and what it needs: a second board, wires, a sensor, Wi-Fi. Only two boards can be attached at once, so a check needing a board that is not attached waits for the user to swap cables. Say so rather than skipping it silently.
 

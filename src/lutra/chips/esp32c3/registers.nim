@@ -79,7 +79,12 @@ const
   superWatchdog* = Reg 0x6000_80AC
   superWatchdogProtect* = Reg 0x6000_80B0
   timerWatchdog* = Reg 0x6001_F048
+  timerWatchdogPrescale* = Reg 0x6001_F04C
+  timerWatchdogStage0* = Reg 0x6001_F050
+  timerWatchdogFeed* = Reg 0x6001_F060
   timerWatchdogProtect* = Reg 0x6001_F064
+  rtcOptions* = Reg 0x6000_8000
+  resetState* = Reg 0x6000_8038
 
   systemTimerConfig* = Reg 0x6002_3000
   systemTimerOp* = Reg 0x6002_3004

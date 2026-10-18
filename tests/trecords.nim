@@ -24,6 +24,8 @@ for i in 0..1:
   Loop().record(a, b, ms = 5'u64 + i.uint64, flag = i == 0) # Names go only with the first
 var packet: array[64, byte]
 var length = Loop().receiveFrame(packet)
+doAssert length == 1 and packet[0] == startKind # Before the program's first record, once
+length = Loop().receiveFrame(packet)
 doAssert packet[0] == namesKind and cast[string](packet[1 ..< length]) == "a,b,ms,flag"
 length = Loop().receiveFrame(packet)
 doAssert packet[0] == valuesKind and packet.toOpenArray(0, length - 1).values == @[-7'i64, 1023, 5, 1]
