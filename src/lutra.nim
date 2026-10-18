@@ -31,6 +31,12 @@ template print*(args: varargs[untyped]) =
 proc millis*(): uint64 = micros() div 1000
   ## Milliseconds since reset
 
+proc restart*() {.noreturn.} =
+  ## Starts the board again, once the console has sent what it was given.
+  ## `resetReason()` then says `software`.
+  console.flush()
+  restartNow()
+
 proc backoff*(first, most: Duration): Backoff =
   ## Waits for trying again, as `lutra/chance` says, moved about by a seed
   ## from the hardware's random numbers, so that each device's differ

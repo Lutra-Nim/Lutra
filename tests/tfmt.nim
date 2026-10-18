@@ -33,6 +33,10 @@ topic.clear()
 doAssert topic.len == 0 and not topic.full and topic.chars.len == 0
 topic.write true, '!'
 doAssert printed(topic) == "true!"
+type Mood = enum calm, cross
+topic.clear()
+topic.write cross, " ", calm # By name
+doAssert printed(topic) == "cross calm"
 
 # JSON: names from the arguments, text quoted and escaped, objects nested
 var name: Text[8]

@@ -12,8 +12,8 @@ proc tool(name: string): string =
   let exe = "riscv32-esp-elf-" & name
   if findExe(exe) != "": return exe
   for version in listDirs(getHomeDir() / ".espressif/tools/riscv32-esp-elf"):
-    if fileExists(version / "riscv32-esp-elf/bin" / exe):
-      return version / "riscv32-esp-elf/bin" / exe
+    if fileExists(version / "riscv32-esp-elf/bin" / exe & ExeExt):
+      return version / "riscv32-esp-elf/bin" / exe & ExeExt
   exe
 
 proc compiler*(): Tool =
@@ -65,11 +65,11 @@ proc audit*(elf: string) =
 
   # Startup runs from RAM before flash can be read
   # Only that code's relocations: the debugging information has many more
-  let ramRelocations = gorge(tool"readelf" & " -rW " & quoteShell(elf) &
-    " | awk '/^Relocation section/ { on = index($0, \".rela.ram.text\") } on'")
-  for line in ramRelocations.splitLines:
+  var inRam = false
+  for line in gorge(tool"readelf" & " -rW " & quoteShell(elf)).splitLines:
+    if line.startsWith("Relocation section"): inRam = ".rela.ram.text" in line
     let fields = line.splitWhitespace
-    if fields.len >= 5 and fields[2].startsWith("R_RISCV") and
+    if inRam and fields.len >= 5 and fields[2].startsWith("R_RISCV") and
         fields[4] != "lutraMain" and inFlash(fromHex[int](fields[3])):
       problems.add "Code that runs from RAM refers to " & fields[4] &
         ", which is in flash and can't be read until flash is mapped."
@@ -99,16 +99,16 @@ proc flash*(elf: string, m: Memory, port: string) =
     (boot, code, constants) = (base & ".boot.bin", base & ".code.bin", base & ".constants.bin")
   exec tool"objcopy" & " -O binary -j .flash.text " & quoteShell(elf) & " " & quoteShell(code)
   exec tool"objcopy" & " -O binary -j .flash.rodata " & quoteShell(elf) & " " & quoteShell(constants)
-  exec tool"objcopy" & " -R .flash.text -R .flash.rodata -R '.rela.*' " & quoteShell(elf) & " " & quoteShell(base & ".ram.elf")
-  exec esptool() & " --chip esp32c3 elf2image --flash-mode " & m.flashMode &
+  exec tool"objcopy" & " -R .flash.text -R .flash.rodata -R " & quoteShell(".rela.*") & " " & quoteShell(elf) & " " & quoteShell(base & ".ram.elf")
+  exec quoteShell(esptool()) & " --chip esp32c3 elf2image --flash-mode " & m.flashMode &
     " --flash-freq " & m.flashFreq & " --flash-size " & $(m.flashSize div 1.MB) & "MB" &
     " -o " & quoteShell(boot) & " " & quoteShell(base & ".ram.elf")
   if readFile(boot).len > m.codeOffset:
     fail buildFailed, "The part of the program loaded into RAM is larger than the 64K of flash set aside for it."
-  exec esptool() & " --chip esp32c3 --port " & port & " --baud 460800 write-flash" &
+  exec quoteShell(esptool()) & " --chip esp32c3 --port " & quoteShell(port) & " --baud 460800 write-flash" &
     " 0x0 " & quoteShell(boot) &
     " " & $m.codeOffset & " " & quoteShell(code) &
     " " & $m.constantsOffset & " " & quoteShell(constants)
 
 proc resetCommand*(port: string): string =
-  esptool() & " --chip esp32c3 --port " & port & " --after hard-reset chip-id >/dev/null"
+  quoteShell(esptool()) & " --chip esp32c3 --port " & quoteShell(port) & " --after hard-reset chip-id"

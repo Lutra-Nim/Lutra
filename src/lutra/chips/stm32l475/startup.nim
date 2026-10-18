@@ -1,6 +1,6 @@
 import ../../arch/armv7m/start
 import ../../tasks
-import registers, clock
+import registers, clock, power
 
 {.used.}
 {.emit: vectors(82).}
@@ -31,6 +31,7 @@ proc reset() {.exportc: "lutraReset".} =
   while (clockConfig[] shr 2 and 3) != 3: discard
 
   startCounting()
+  noteReset()
   boardStart()
   nimMain()
   while true: idle() # The program has ended, and any tasks go on

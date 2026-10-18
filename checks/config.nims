@@ -1,4 +1,4 @@
-import std/[os, strutils]
+import std/[os, strutils, hashes]
 import ../src/lutra/project
 board "esp32c3_devkitm1"
 
@@ -16,31 +16,25 @@ proc generate(model, work: string) =
 task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
   let
     work = buildDir() / "steady" / model
-    nonce = gorge("date +%s")
+    nonce = $(hash(CompileDate & CompileTime).uint32) # When this task started
   generate(model, work)
   writeFile(work / "bench.nim", readFile(steady / "tests/mcu/bench.nim.in").replace("@MODEL@", model))
   build(thisDir() / "steady.nim", "-d:steadyProfile -d:steadyNonce=" & nonce &
     " --path:" & steady / "src" & " --path:" & work)
   flash("steady", serialPort())
   let record = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END")
-  echo record
   if "nonce " & nonce notin record: fail checkFailed, "That is not the image that was just built."
 
 task echo, "Send the board 64K at 921600 baud and check that it all comes back":
   let
     port = serialPort()
-    work = buildDir() / "echo"
-    (sent, got) = (quoteShell(work / "sent"), quoteShell(work / "got"))
-  mkDir work
+    host = hostProgram(thisDir() / "echo_host.nim",
+      [thisDir() / "echo_host.nim", thisDir() / "../src/lutra/host/serialport.nim"])
   for (receive, switches) in [("polled", ""), ("buffered", "-d:buffered")]:
     build(thisDir() / "echo.nim", switches)
     flash("echo", port)
-    # The reset's own chatter, at the boot ROM's baud rate, is read and dropped
-    exec "sh -c " & quoteShell("exec 3<>" & port & "; " & resetCommand(port) &
-      "; stty 921600 raw -echo -hupcl <&3; sleep 1; timeout 1 cat <&3 >/dev/null" &
-      "; head -c 65536 /dev/urandom > " & sent &
-      "; (timeout 4 cat <&3 > " & got & ") & cat " & sent & " >&3; wait" &
-      "; cmp " & sent & " " & got)
+    try: exec quoteShell(host) & " " & quoteShell(port) & " " & quoteShell(resetCommand(port))
+    except OSError: fail checkFailed, "The echo check FAILED, with receive " & receive & "."
     echo "All 65536 bytes came back, with receive ", receive, "."
 
 proc twoBoards(): seq[string] =
@@ -55,7 +49,6 @@ task wiring, "Check the wires between two boards":
   build(thisDir() / "wiring.nim", "-d:drive")
   flash("wiring", ports[0])
   let report = capture(ports[1], resetCommand(ports[1]), "BEGIN", "END", 30)
-  echo report
   if "wiring ok" notin report: fail checkFailed, "The boards are not wired as checks/wiring.nim describes."
 
 task link, "Two wired boards exchange checksummed buffers over UART and SPI":
@@ -68,13 +61,15 @@ task link, "Two wired boards exchange checksummed buffers over UART and SPI":
   flash("link", ports[0])
   build(thisDir() / "link.nim")
   flash("link", ports[1])
-  # The second board is reset first and waits; the first board's reset starts them
-  exec captureCommand(ports[1], resetCommand(ports[1]), "BEGIN", "END", 60) & " > " &
-    quoteShell(work / "second.txt") & " & sleep 3"
+  # The second board is reset first and waits; the first board's reset starts
+  # them. Running the second in the background takes a POSIX shell.
+  exec captureCommand(ports[1], resetCommand(ports[1]), "BEGIN", "END", work / "second.txt", 60) &
+    " > /dev/null & sleep 3"
+  echo "The first board:"
   let first = capture(ports[0], resetCommand(ports[0]), "BEGIN", "END", 60)
   exec "sleep 2"
-  let second = readFile(work / "second.txt").replace("\r", "")
-  echo "The first board:\n", first, "\nThe second board:\n", second
+  let second = readFile(work / "second.txt")
+  echo "\nThe second board:\n", second
   for report in [first, second]:
     if "uart 200 of 200" notin report or "spi 200 of 200" notin report:
       fail checkFailed, "The link check FAILED."
@@ -91,7 +86,10 @@ task keywords, "Recognise recorded words, and check the board against the host b
   if not dirExists(work / "yes"):
     # 112 MB, once. It is someone else's to hand out, so it is not kept in the repository.
     exec "curl -L --fail -o " & archive & " http://download.tensorflow.org/data/speech_commands_test_set_v0.02.tar.gz"
-    if "cc2a00c1147c2254e9be3fa0f779d8c17421dc349b86366567a8edfa9acd51df" notin gorge("sha256sum " & archive):
+    let sha256 = when defined(windows): "certutil -hashfile " & archive & " SHA256"
+                 elif defined(macosx): "shasum -a 256 " & archive
+                 else: "sha256sum " & archive
+    if "cc2a00c1147c2254e9be3fa0f779d8c17421dc349b86366567a8edfa9acd51df" notin gorge(sha256):
       fail notSetUp, "The test set is not the file this check was written against."
     exec "tar -xzf " & archive & " -C " & work
     rmFile archive
@@ -104,7 +102,6 @@ task keywords, "Recognise recorded words, and check the board against the host b
   build(thisDir() / "keywords.nim", paths)
   flash("keywords", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END").strip
-  echo report
   var got: seq[string]
   for line in report.splitLines:
     if not line.startsWith("time"): got.add line
@@ -118,15 +115,22 @@ task sensors, "Read the board's sensors through their driver packages":
     " --path:" & thisDir() / "../../lutra-lis3mdl/src")
   flash("sensors", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
-  echo report
   if "FAILED" in report or "END" notin report: fail checkFailed, "The sensor check FAILED."
   echo "\nThe sensor check passed."
+
+task resets, "The watchdog resets the board, the board restarts, and each says why it started":
+  build(thisDir() / "resets.nim")
+  flash("resets", serialPort())
+  let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
+  for line in ["started by the host ok", "fed for a second ok", "starved for 250 ms ok",
+      "the watchdog resets ok", "restart ok"]:
+    if line notin report: fail checkFailed, "\nThe resets check FAILED: no \"" & line & "\"."
+  echo "\nThe resets check passed."
 
 task loopback, "The B-L475E-IOT01A's SPI1, through a jumper back to itself":
   build(thisDir() / "loopback.nim")
   flash("loopback", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 30)
-  echo report
   if "FAILED" in report or "END" notin report: fail checkFailed, "The loopback check FAILED."
   echo "\nThe loopback check passed."
 
@@ -139,6 +143,5 @@ task wifi, "Publish and subscribe over MQTT, through a second DevKitM-1 running 
     " " & quoteShell("-d:password=" & getEnv("LUTRA_WIFI_PASSWORD")))
   flash("wifi", serialPort())
   let report = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END", 60)
-  echo report
   if "FAILED" in report or "END" notin report: fail checkFailed, "The Wi-Fi check FAILED."
   echo "\nThe Wi-Fi check passed."

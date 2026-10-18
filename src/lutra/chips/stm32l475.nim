@@ -10,6 +10,8 @@ when defined(nimscript):
   export host
 else:
   import ../arch/armv7m/[interrupts, fault, context]
-  import stm32l475/[startup, gpio, uart, i2c, spi, clock, timer, random]
+  import stm32l475/[startup, gpio, uart, i2c, spi, clock, timer, random, power]
+  import ../hal/resets
   export gpio except asFunction, drive, openDrain, pinInterrupt
-  export uart, i2c, spi, timer, random, clock.cpuHz, clock.cycles, clock.micros, interrupts.critical, fault.reportFaults
+  export power except noteReset
+  export uart, i2c, spi, timer, random, resets, clock.cpuHz, clock.cycles, clock.micros, interrupts.critical, fault.reportFaults

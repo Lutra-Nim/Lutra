@@ -8,7 +8,7 @@ export stm32l475
 const
   memory* = Memory(flashSize: 1.MB)
   console* = usart1
-  consolePorts* = ["ttyACM", "cu.usbmodem"] ## What a host calls the ST-LINK's serial port
+  consolePorts* = ["ttyACM", "cu.usbmodem", "USBSER"] ## What a host calls the ST-LINK's serial port. On Windows, its driver's device, untried
 
   led1* = PA5
   led2* = PB14

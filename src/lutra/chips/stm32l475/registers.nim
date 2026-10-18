@@ -19,6 +19,12 @@ const
   # The 32.768 kHz crystal and the timer that can count it, for the self-check
   powerControl* = Reg 0x4000_7000
   backupControl* = Reg 0x4002_1090
+  resetFlags* = Reg 0x4002_1094 # In the clock controller's status
+  watchdogKey* = Reg 0x4000_3000 # The independent watchdog
+  watchdogPrescale* = Reg 0x4000_3004
+  watchdogReload* = Reg 0x4000_3008
+  watchdogStatus* = Reg 0x4000_300C
+  systemReset* = Reg 0xE000_ED0C # The core's application interrupt and reset control
   clockSources* = Reg 0x4002_1088
   lowTimerControl* = Reg 0x4000_7C10
   lowTimerReload* = Reg 0x4000_7C18

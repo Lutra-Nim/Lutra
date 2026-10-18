@@ -109,6 +109,14 @@ template putDecimal(link: untyped, number: Decimal) =
       link.put(char(ord('0') + int(rest div scale)))
       rest = rest mod scale
 
+func name[E: enum](value: E): cstring =
+  ## An enum's value by name, from a table in flash rather than a string made
+  const names = block:
+    var table: array[E, cstring]
+    for e in E: table[e] = cstring($e)
+    table
+  names[value]
+
 proc put*(link: static ByteSink, text: cstring) =
   for c in text: link.put(c)
 
@@ -122,6 +130,7 @@ proc put*(link: static ByteSink, value: SomeInteger) = link.putInteger(value)
 proc put*(link: static ByteSink, value: Hex) = link.putHex(value)
 proc put*(link: static ByteSink, value: Decimal) = link.putDecimal(value)
 proc put*(link: static ByteSink, text: Text) = link.put(text.chars)
+proc put*[E: enum](link: static ByteSink, value: E) = link.put(value.name) ## By name
 
 proc put*(text: var Text, s: cstring) =
   for c in s: text.put(c)
@@ -135,6 +144,7 @@ proc put*(text: var Text, flag: bool) =
 proc put*(text: var Text, value: SomeInteger) = text.putInteger(value)
 proc put*(text: var Text, value: Hex) = text.putHex(value)
 proc put*(text: var Text, value: Decimal) = text.putDecimal(value)
+proc put*[E: enum](text: var Text, value: E) = text.put(value.name) ## By name
 
 # JSON. An object holds its fields, each as `json` was given it, but for
 # text, which it holds by reference until it is printed.

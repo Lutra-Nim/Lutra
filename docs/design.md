@@ -41,20 +41,22 @@ Checked 14 October 2026: no package in Nimble's list, of about 3,000, is named f
 
 ### 1.2 Where things stand
 
-Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has what M4's exit asked of it, and tasks and timer events; §7 sets the two side by side. M5 is under way: tasks, timer events and data capture are done on both boards (§5.5, §8.2), and MQTT over Wi-Fi on the DevKitM-1, through a second DevKitM-1 running Espressif's AT firmware (§8.3).
+Two boards are supported: the ESP32-C3-DevKitM-1, a RISC-V, and ST's B-L475E-IOT01A, a Cortex-M4. Milestones M0 to M4 of §11 are done, and §11 says what each verified. The second board has all the first has but the SPI target, which Krill needs, and the addressable LED, which it does not carry; §7 sets the two side by side. M5 is under way: tasks, timer events and data capture are done on both boards (§5.5, §8.2), and MQTT over Wi-Fi on the DevKitM-1, through a second DevKitM-1 running Espressif's AT firmware (§8.3).
 
-On 16 and 17 October, on the branch `feature/agents`, in the order the author chose: the repositories moved to the `Lutra-Nim` organisation (§8); bounded commands, exit codes, `nim doctor` and `AGENTS.md` (§4.4); a panic report, with Nim's checks on by default (§5.6); and two rounds of the libraries in §8.1. Then code for the B-L475E-IOT01A's second UART, receiving through an interrupt, SPI and random numbers (§7), which is built and **not yet run on the board**.
+On 16 and 17 October, on the branch `feature/agents`, in the order the author chose: the repositories moved to the `Lutra-Nim` organisation (§8); bounded commands, exit codes, `nim doctor` and `AGENTS.md` (§4.4); a panic report, with Nim's checks on by default (§5.6); and two rounds of the libraries in §8.1. Then code for the B-L475E-IOT01A's second UART, receiving through an interrupt, SPI and random numbers (§7). That branch is merged.
+
+Later on 17 October, in one session with the B-L475E-IOT01A and the sensor board's DevKitM-1 attached: everything written for the B-L475E-IOT01A ran, and two bugs were fixed on the way (§11, M5); the tasks stopped needing `sh`, `stty` and `awk`, through a program for the host, `lutra/host/monitor` (§4.3); filters, statistics, trigonometry and a spectrum (§8.1); and the watchdog, the reset reason and `restart` on both boards (§7), with a check of their own, `nim resets`.
 
 Where to pick up:
 
-1. **Run the B-L475E-IOT01A's new code.** It needs the boards swapped: unplug the DevKitM-1 with the sensor board, leave the AT module's in, and plug in the B-L475E-IOT01A. Then a jumper from D11 to D12 for `nim loopback`, and the three wires that ran from the AT module to the sensor board's DevKitM-1 moved to the B-L475E-IOT01A: its D1 to the module's IO6, its D0 to the module's IO7, ground to ground. That D0, D1, D11 and D12 are PA1, PA0, PA7 and PA6 is from ST's manual, from memory. Run from `checks/`, each with `-d:board=b_l475e_iot01a`: `selfcheck`, which now checks random numbers; `loopback`; `echo`, which has never run on this board, and needed the `setBaud` written for it; `sensors`; `steady`; and `wifi`, through UART4. Then a program with an index out of range, through `nim monitor`, for the panic report on ARM. Write what is confirmed into Appendix D and §7, and fix what is not.
-2. **Merge.** `feature/agents` into `main` here. Steady has a branch, `checks-off-on-target`, that its kernels need for full speed now that Lutra keeps checks on (§5.6). `lutra_espat`'s `master` uses `lutra/parse`, which only `feature/agents` has.
-3. **Next, by the order proposed on 14 October:** flash storage and the settings store, whose shape is to be put to the author first (below); the gesture demo, which now needs only a model and a window of samples; then making Lutra installable and listing it in Nimble's packages (§8). The libraries of §8.1 still to write are the ones it ties to the gesture demo. Of §4.4, a host board and `nim size --budget` are left.
+1. **Run what needs the AT module.** `nim wifi` through the B-L475E-IOT01A's UART4: the sensor board's DevKitM-1 unplugged, the AT module's plugged in, and its IO6, IO7 and ground wired to the B-L475E-IOT01A's D1, D0 and ground in place of the D0 to D1 jumper. Then, with both DevKitM-1 attached, `nim wiring` and `nim link`, which have not run since the tasks changed (§4.3).
+2. **Try the tasks on Windows and macOS** on a real machine, if the author has one: `nim doctor`, `nim flash`, `nim monitor -d:reset`, `nim capture`. Whether the ports are found by their drivers' names on Windows is a guess (§4.3).
+3. **Next, by the order proposed on 14 October:** flash storage and the settings store, whose shape is to be put to the author first (below); the gesture demo, which now has its filters and a spectrum and needs only a model and a window of samples; then making Lutra installable and listing it in Nimble's packages (§8). Of §4.4, a host board and `nim size --budget` are left.
 
 - **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11).
 - **Left by earlier milestones**, and worth going back to before a release: the table at the end of §11, M5.
 - **Storage in flash** is set out in §8.4: how it works on each chip, what it opens up, three layers, and littlefs not yet. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. `lutra/crc`'s `crc32` is there for it.
-- **Hardware:** as of 17 October both DevKitM-1 are plugged in and the B-L475E-IOT01A is not, as only two boards can be at once (Appendix C).
+- **Hardware:** as of 17 October the B-L475E-IOT01A and the sensor board's DevKitM-1 are attached, the AT module is not, and the B-L475E-IOT01A has jumpers from D0 to D1 and from D11 to D12 (Appendix C).
 
 What exists, all exercised on hardware:
 
@@ -66,20 +68,20 @@ What exists, all exercised on hardware:
 | SPI | Controller, and a target driven by DMA, with a ready line between them |
 | I2C | Controller, on any pins. Reads and writes verified against a real sensor |
 | LED | The board's addressable LED, as `rgbLed.color(green = 20)`. Its pulses are checked on the pin, and its colours were seen by eye |
-| Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections, timer events as `{.interrupt: every(10.ms).}` procs, and a panic report that names the line of a failed check (§5.6) |
+| Other | Microsecond time and delays, the cycle counter, a random number source, `critical:` sections, timer events as `{.interrupt: every(10.ms).}` procs, a panic report that names the line of a failed check (§5.6), the watchdog, the reset reason and `restart` (§7) |
 | Tasks | `{.task.}` procs that take turns, `wait cond` and `wait(cond, within = ...)`, a drift-free `for turn in every(10.ms)`, and a report of a task's stack overflowing (§5.5) |
-| Libraries | Printing without a heap, into a fixed `Text` too, JSON, log levels, a debounced button, random numbers from a seed and waits for trying again, a fixed-size list, reading numbers, CRC-16 and CRC-32, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root and logarithms in whole numbers, and the audio front-end a keyword-spotting model needs |
+| Libraries | Printing without a heap, into a fixed `Text` too, JSON, log levels, a debounced button, random numbers from a seed and waits for trying again, a fixed-size list, reading numbers, CRC-16 and CRC-32, a ring buffer, durations, COBS framing with a CRC, records for `nim capture`, a square root, logarithms and trigonometry in whole numbers, filters, running statistics, sorting, a median and percentiles, a spectrum, and the audio front-end a keyword-spotting model needs |
 | Connectivity | A `Socket` interface, an engine for AT commands, and an MQTT client that publishes and subscribes (§8.3) |
 | Beside this repository | Three driver packages, each verified on the real part: `lutra_lsm6ds33`, for an accelerometer and gyroscope, `lutra_lis3mdl`, for a magnetometer, and `lutra_espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware. Each is a repository of its own (§8) |
-| Host side | `build`, `flash`, `monitor`, `capture`, `size`, `selfcheck` and `doctor` tasks, with exit codes that say what failed; a `monitor` that ends at a line, a time or a panic and can send a line; and checks that stop a build that would not run (§4.4) |
+| Host side | `build`, `flash`, `monitor`, `capture`, `size`, `selfcheck` and `doctor` tasks, with exit codes that say what failed; a `monitor` that ends at a line, a time or a panic and can send a line; and checks that stop a build that would not run (§4.4). They need no shell tools, through `lutra/host/monitor` (§4.3) |
 
-On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1, I2C, time, the cycle counter, `critical:` sections, tasks, timer events, data capture and a fault report of Lutra's own (§5.5). `hello.nim` is the same program in both boards' folders of `examples/`.
+On the B-L475E-IOT01A, also exercised on hardware: bring-up at 80 MHz, pins and their edge interrupts, the console on USART1 and a second UART, UART4, each polled or through an interrupt, SPI1 as controller, I2C, random numbers, time, the cycle counter, `critical:` sections, tasks, timer events, data capture, panics, a fault report of Lutra's own (§5.5), the watchdog, the reset reason and `restart`. `hello.nim` is the same program in both boards' folders of `examples/`.
 
 How to confirm nothing is broken. Appendix C has the machine's set-up; with two boards of one kind attached, the single-board commands need `LUTRA_PORT` or `-d:port=...`. The checks run on the DevKitM-1 unless `-d:board=b_l475e_iot01a` comes before the command.
 
 | Run | From | Proves |
 |---|---|---|
-| `nim r` on each `tests/t*.nim` | `tests/` | Formatting, `Text`, decimals and JSON, reading numbers, CRCs, framing, the ring buffer and the list, random numbers and backoff, the debounced button, claims, the memory layout, the arithmetic, the front-end and MQTT, on the host. `nim r -d:live tmqtt.nim` also runs MQTT against test.mosquitto.org |
+| `nim r` on each `tests/t*.nim` | `tests/` | Formatting, `Text`, decimals and JSON, reading numbers, CRCs, framing, the ring buffer and the list, random numbers and backoff, the debounced button, claims, the memory layout, the arithmetic and trigonometry, filters, statistics, the front-end and the spectrum, and MQTT, on the host. `nim r -d:live tmqtt.nim` also runs MQTT against test.mosquitto.org |
 | `nim selfcheck` | `checks/` | The board: clock, time, pins, interrupts, flash, I2C with nothing on it, the LED's pulses, tasks, timer events, no watchdog, the fault report. Takes 45 s |
 | `nim steady` | `checks/` | Steady's `kws` gives checksum `ab2fdbf1` |
 | `nim echo` | `checks/` | 64 KB at 921600 baud comes back intact, polled and buffered |
@@ -89,8 +91,10 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 | `nim -d:board=b_l475e_iot01a selfcheck` | `checks/` | The other board: its clock against its crystal, time, pins, interrupts, flash, I2C, tasks, timer events, no watchdog, the fault report. Takes 45 s |
 | `nim -d:board=b_l475e_iot01a sensors` | `checks/` | That board's own LIS3MDL answers through the same driver, at the rate asked for, and a refused transaction does not spoil the next |
 | `nim -d:board=b_l475e_iot01a steady` | `checks/` | Steady's `kws` gives `ab2fdbf1` there too |
-| `nim -d:board=b_l475e_iot01a loopback` | `checks/` | With a jumper from D11 to D12: SPI1 brings back what it sends, into an input as long or shorter. **Not yet run** |
-| `nim flash record.nim`, then `nim capture > button.csv` | `examples/` of either board | The CSV has its header, then turns from 0 with none missing |
+| `nim -d:board=b_l475e_iot01a loopback` | `checks/` | With jumpers from D11 to D12 and from D1 to D0: SPI1 brings back what it sends, into an input as long or shorter, and so does UART4, through its interrupt |
+| `nim resets`, and with `-d:board=b_l475e_iot01a` | `checks/` | Each board says the host reset it; fed, the watchdog waits, and starved for 300 ms it resets the board, which says so; then the board restarts, and says so |
+| `nim -d:board=b_l475e_iot01a echo` | `checks/` | 64 KB at 921600 baud through the ST-LINK comes back intact, polled and buffered |
+| `nim flash record.nim`, then `nim capture > button.csv` | `examples/` of either board | The CSV has its header, then turns from 0 with none missing. On the B-L475E-IOT01A, now and then a few records from before the reset come first (§12) |
 | `nim wifi` | `checks/` | With the second DevKitM-1 running Espressif's AT firmware and wired as for `nim wiring`, `lutra-espat` beside this repository, and the network in `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD`: the board joins it, and 20 messages to test.mosquitto.org come back in order, a long one whole; one too long is refused, the messages end when the connection does, and it connects again. With both boards attached it needs the port named |
 | `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 | `nim r tespat.nim` | `tests/` of `lutra-espat` | The AT driver against a stand-in module that answers as the real one was seen to |
@@ -193,8 +197,8 @@ lutra/
     boards/b_l475e_iot01a.nim
     hal/                     the interfaces: pin, bytelink, i2c, spi
     reg, claims              registers and compile-time ownership
-    fmt, time, tasks, records, containers, framing, fixed, signal        libraries (§8)
-    capture.nim              the host's side of records, built and run by `nim capture`
+    fmt, time, tasks, records, containers, framing, fixed, signal, ...   libraries (§8)
+    host/                    programs for the host that the tasks build: the monitor (§4.3)
   checks/                    hardware checks, with their tasks in config.nims
   examples/                  a folder for each board, with its own config.nims
   tests/                     host-side tests
@@ -235,7 +239,9 @@ Not built yet: selecting a board by MAC address, and an "all attached boards" mo
 
 `checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `wiring`, `link`, `sensors`, `keywords` and `wifi`. `selfcheck` and these only work from Lutra's repository, because `checks/` is not installed with the package.
 
-The tasks use `sh`, `stty` and `awk`, so they run on Linux only for now.
+**Decided**, 17 October 2026: the tasks need no shell tools, so that they run on Linux, macOS and Windows. What NimScript cannot do (Appendix B) is done by `lutra/host/monitor`, a program for the host that the tasks build the first time they need it, named after its sources so that a change builds it again. It opens the port (termios on Linux and macOS, Win32 on Windows), lists the ports, resets the board, sends a line, reads until a line, a time or a panic, names the line of a panic, decodes records, and ends with an `Exit` code. It replaced a pipeline of `sh`, `stty`, `awk` and `timeout`, and `capture.nim`. On Windows a port is opened by one program at a time, so the monitor lets go of it while the board is reset, and what the board says straight after is lost; Linux and macOS hold it throughout. On Windows the kind of port is told by its driver's device name, `Silabser` for the DevKitM-1's bridge and `USBSER` for the ST-LINK, from memory and not tried.
+
+**Verified** on Linux with both boards, every check in §1.2 that needs no second DevKitM-1. The Windows build, cross-compiled with Zig and run under Wine with COM5 mapped to the B-L475E-IOT01A, listed the ports, sent a line and read the answer, ended at a line and at a time, and decoded records; the reset there was not tried, as the reset command is a Linux program. The macOS build compiles and links, and has not run. The `link` check still runs one capture in the background with a POSIX shell's `&`.
 
 ### 4.4 Agents as users
 
@@ -257,7 +263,7 @@ Worth doing soon, most valuable first:
 
 Later: instructions for agents (skills) and templates for porting a board, adding a peripheral and writing a driver, once the interfaces stop moving; `{.deprecated: "use X".}` and a CHANGELOG from the first release; `nim pins` listing each pin's uses and claims.
 
-Not now: a code for every error with a page each, since the errors already say what and where; a `lutra` program of its own wrapping the tasks; a registry of packages with manifests and conformance checks, with three drivers; a server for the Model Context Protocol, which should wrap the commands above once they print JSON; editor tooling. Dropping `sh`, `stty` and `awk` is already a known gap (§12).
+Not now: a code for every error with a page each, since the errors already say what and where; a `lutra` program of its own wrapping the tasks; a registry of packages with manifests and conformance checks, with three drivers; a server for the Model Context Protocol, which should wrap the commands above once they print JSON; editor tooling. Dropping `sh`, `stty` and `awk` is done (§4.3).
 
 The notes' items for Steady, such as checking a model for operators it lacks before generating code, belong in Steady's repository.
 
@@ -581,21 +587,36 @@ State of Lutra against this table, on the ESP32-C3:
 
 | Tier | Verified | Not written |
 |---|---|---|
-| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, panics, watchdogs off | A trap report of Lutra's own, reset reason, sleep, feeding a watchdog on purpose |
+| Core | Startup, clock, memory layout, GPIO, UART both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, panics, the watchdog, reset reason, restarting | A trap report of Lutra's own, sleep |
 | Buses | SPI controller, SPI target with DMA, I2C controller | DMA for the SPI controller; I2C target |
 | Timing and analog | Addressable LED | PWM, ADC, pulse capture |
 | TinyML inputs | Hardware RNG | I2S, raw flash storage |
 
-And on the STM32L475, which has what M4's exit needed:
+And on the STM32L475:
 
-| Tier | Verified | Written, not yet run on the board | Not written |
-|---|---|---|---|
-| Core | Startup, clock, memory layout, GPIO, USART1 both ways, time, delays, cycle counter, interrupts, timer events, critical sections, console, a fault report | Receiving through an interrupt, as `usart1.buffer(...)`; `setBaud`; UART4 on PA0 and PA1; panics | Reset reason, sleep, a watchdog |
-| Buses | I2C controller | SPI1 as controller, on PA5, PA6 and PA7, by halvings of 80 MHz | DMA, SPI target, I2C target |
-| Timing and analog | | | PWM, ADC, pulse capture |
-| TinyML inputs | | The hardware RNG, given 48 MHz by the second PLL, PLLSAI1, from the same 4 MHz: times 24, halved | I2S, raw flash storage |
+| Tier | Verified | Not written |
+|---|---|---|
+| Core | Startup, clock, memory layout, GPIO, USART1 and UART4 both ways, polled or through an interrupt, time, delays, cycle counter, interrupts, timer events, critical sections, console, panics, a fault report, the watchdog, reset reason, restarting | Sleep |
+| Buses | I2C controller, SPI1 as controller | DMA, SPI target, I2C target |
+| Timing and analog | | PWM, ADC, pulse capture |
+| TinyML inputs | The hardware RNG | I2S, raw flash storage |
 
-The register addresses and bits for those were written from memory of RM0351 and are in `registers.nim`; none goes into Appendix D until a check has run it.
+Of what the C3 has, it lacks only the SPI target, which Krill needs and the B-L475E-IOT01A does not serve, and the addressable LED, which it does not carry.
+
+**Decided**, 17 October 2026, for the watchdog and the reason a board started, and **verified** on both by `nim resets`:
+
+```nim
+print "Started after ", resetReason(), "\n" # powerOn, resetPin, watchdogTimeout, software, brownout, wake, other
+watchdog.start(within = 2.sec)              # Once; it can't be stopped
+for turn in every(100.ms):
+  if healthy: watchdog.feed()               # The program feeds it, where it has shown it is well
+restart()                                   # Once the console has sent what it was given
+```
+
+- The program feeds the watchdog rather than the scheduler, because a task stuck waiting forever, the usual hang, still lets the others run.
+- It can't be stopped, because the STM32L475's can't. Its time is checked when the program is compiled: 1 ms to 49 days on the C3, 125 µs to 32 s on the STM32L475, whose oscillator is only roughly 32 kHz.
+- The DevKitM-1's EN button and the host's reset both read as `powerOn`, and the STM32L475 can't tell a brownout from power coming on. Its reset flags are kept across resets, so its startup reads and clears them, which costs every program 44 bytes of flash and 4 of RAM. Flashing it leaves `software`, as the probe asks the core to reset.
+- The enum's value is `watchdogTimeout`, not `watchdog`, which is the constant: Nim takes the one name as ambiguous. `print` now writes any enum by its name, from a table of `cstring`s in flash.
 
 ---
 
@@ -621,7 +642,7 @@ The register addresses and bits for those were written from memory of RM0351 and
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
-Written so far: printing, into a `Text` and as decimals (`fmt`), logging (`lutra`), reading numbers (`parse`), CRCs (`crc`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root and logarithms (`fixed`), the audio front-end (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/Lutra-Nim/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
+Written so far: printing, into a `Text` and as decimals (`fmt`), logging (`lutra`), reading numbers (`parse`), CRCs (`crc`), durations and the `every` of timer events (`time`), tasks (`tasks`), records for capture (`records`), a ring buffer (`containers`), framing (`framing`), a square root, logarithms and trigonometry (`fixed`), filters (`filters`), statistics and sorting (`stats`), the audio front-end and a spectrum (`signal`), AT commands (`at`) and an MQTT client (`mqtt`). The third driver package is `lutra_espat`, at `github.com/Lutra-Nim/Lutra-ESPAT` and checked out beside this repository as `lutra-espat`, for Wi-Fi through an ESP32 running Espressif's AT firmware; it is a repository of its own because it is tied to one module's firmware.
 
 ### 8.1 Core
 
@@ -682,6 +703,39 @@ var readings: List[16, int32]         # In containers: add, len, [], items, del 
 ```
 
 **Verified**: each against tests on the host, the button against a stand-in pin and clock, bouncing; and on the C3, a press of the boot button made from the host through the USB bridge's DTR line gave one `pressed`, a `held` a second later and one `released`. A change counts once the pin has read otherwise for `settle`, 20 ms unless it says, timed from the first reading that differed.
+
+**Written**, 17 October 2026, four of the five above, ahead of the gesture demo, after the author chose each shape. Steadying a model's answers is left, perhaps for Steady.
+
+```nim
+import lutra/[filters, stats, fixed, signal] # filters and stats are not exported by `lutra`
+
+var
+  smooth: MovingAverage[8]                  # Every filter and statistic takes `add`,
+  slow = lowPass(hz = 2, sampleHz = 100)    # and gives `value`, or `mean` and the rest
+  hum = notch(hz = 50, sampleHz = 1000)     # Biquads: lowPass2, highPass, bandPass, notch
+  spikes: MedianOf[5]
+  normal: Stats                             # count, mean, variance, deviation, least, greatest
+spikes.add x
+slow.add spikes.value
+
+sort(window)                                # Insertion sort, in place
+let m = median(window)                      # These reorder `window`, which the `var` shows
+let p90 = percentile(window, 90)            # The nearest rank: always one of the values
+
+let heading = atan2(field.y, field.x)       # An Angle, a 65536th of a turn, which wraps
+print heading.degrees                       # 0 to 359
+let s = sin(30.degrees)                     # Q16, as `log2` is
+let g = mulQ16(s, gain)                     # Rounded, and held at the ends of int32
+const half = q16(0.5)                       # At compile time only
+
+fft(re, im)                                 # In place, exported from signal
+spectrum(samples, strength)                 # Hann window and magnitudes. A sine of
+                                            # amplitude 1000 shows as about 1000
+```
+
+- A filter's settings are worked out when the program is compiled, so `lowPass` takes `static` frequencies and a cutoff too slow for whole numbers is a compile error.
+- `sin` and `cos` are within one 65536th, from a table of a quarter turn, and `atan2` within one 65536th of a turn, by CORDIC; a biquad and `Stats` keep extra fractional bits in their sums, so a slow filter or a small spread is not lost to rounding. Each limit is in the procedure's comment.
+- **Verified** against floating point on the host, and on both boards a program using each gave the host's numbers exactly.
 
 Until something needs them: a command line on the console, types for physical units, CBOR and base64, a priority queue, and a fuller fusion of sensors, such as Madgwick's filter.
 
@@ -1052,6 +1106,7 @@ Begun October 2026. Tasks, timer events and data capture were the branch `featur
 - Wi-Fi, for MQTT, is the author's second DevKitM-1 running Espressif's AT firmware, wired to the first by the wires M2 left, rather than the B-L475E-IOT01A's own module, which needs an SPI driver for that chip and speaks a command set of Inventek's own. That module may come later, as a second `Socket`. LoRa is an RFM95W, an SX1276 at 915 MHz, not yet soldered.
 - For MQTT the author took each recommendation but one: Lutra's own client over `Socket`, not the firmware's; the ESP-AT driver as a package of its own, the AT engine in Lutra; messages through a loop in a task. He asked for subscribing in the first piece, with publishing (§8.3).
 - The Wi-Fi network is given when a program is built, from `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD`, until the settings store can hold it.
+- On 17 October the author took every recommendation: tasks with no shell tools through a Nim program for the host, rather than a Python script on `pyserial` or Linux and macOS only (§4.3); four of §8.1's five libraries, each in the shape recommended; a jumper for UART4 as for SPI1, so that both are checked without the AT module; and, of what was left, the watchdog and the reset reason (§7), rather than flash storage or PWM and ADC.
 - On 16 October the author took, in this order: the tooling for agents (§4.4), the panic report (§5.6), the libraries of §8.1, and then the B-L475E-IOT01A's missing pieces, in one swap of cables. Each shape was his choice among two or three, and he took the recommended one each time: `-d:` defines for `monitor`; print and halt on a failed check, with checks on and hot modules turning theirs off; a `Text` written to, `std/parseutils`' names, `log.info`; button changes in a task's loop, `json(name = value)`, generators and backoffs as values kept.
 
 **Verified**, on both boards, with every check in §1.2 passing after each:
@@ -1063,7 +1118,11 @@ Begun October 2026. Tasks, timer events and data capture were the branch `featur
 | Timer events, `{.interrupt: every(1.ms).}` | §5.5, the self-checks |
 | A drift-free loop, `for turn in every(10.ms)`, which skips turns it would start late | The self-checks |
 | Data capture: `console.record(...)` and `nim capture` | §8.2, `record.nim` in `examples/`, `tests/trecords.nim` |
-| MQTT over Wi-Fi, publishing and subscribing, through Espressif's AT firmware. On the DevKitM-1 only, which has the second UART it needs | §8.3, §9, `nim wifi`, `tests/tmqtt.nim`, and `mqtt.nim` in `examples/` of `lutra-espat` |
+| MQTT over Wi-Fi, publishing and subscribing, through Espressif's AT firmware. On the DevKitM-1; the B-L475E-IOT01A's UART4 now works, and `nim wifi` through it has not been run | §8.3, §9, `nim wifi`, `tests/tmqtt.nim`, and `mqtt.nim` in `examples/` of `lutra-espat` |
+| The B-L475E-IOT01A's UART4, receiving through an interrupt, `setBaud` at 921600, SPI1, random numbers and panics | §7, Appendix D, `nim loopback`, `nim echo`, the self-check |
+| The watchdog, the reset reason and `restart`, on both boards | §7, Appendices A and D, `nim resets` |
+| Tasks that run on Linux, macOS and Windows, through `lutra/host/monitor` | §4.3 |
+| Filters, statistics, trigonometry and a spectrum | §8.1, `tests/tfilters.nim`, `tests/tstats.nim`, `tests/tfixed.nim`, `tests/tsignal.nim` |
 
 Found along the way, and fixed:
 
@@ -1073,6 +1132,8 @@ Found along the way, and fixed:
 - **Changing a UART's rate under bytes still going out garbles them**, and a receiver can take several more to find its feet. The C3's boot ROM leaves its last line in the FIFO, so a program that went to 921600 baud at once lost its first five records, names included. `setBaud` now lets the FIFO and its last byte go first.
 - **Every timer event on the STM32L475 fired once as it started**, until the timer was told that only coming round counts (Appendix D).
 - **`write` failed inside a generic procedure of another package**, as `link.write "AT+CWJAP=\""` in `lutra_espat` did, because it named `put` for the caller's module to find. It now binds `put` itself, leaving it open to the caller's own (Appendix B).
+- **On the B-L475E-IOT01A, `buffer` before `init` received nothing.** `buffer` asked for the interrupt while the port's clock was off, and `init` wrote over it. Every program that buffers a second UART, as `nim wifi` does, writes them in that order. Fixed when `nim loopback` first ran UART4.
+- **`nim loopback` panicked as written**, converting `i * 7` to a byte past 255, once checks were on. It had never run.
 - **`print` could not print an `openArray[char]`**, which a message's payload is. It can now, and string literals take that path too, which cost 26 bytes of code in `hello.nim` and 54 in `tasks.nim`.
 
 Of Steady's models, `ad` is MLPerf Tiny's machine-sound autoencoder, 640 inputs from five frames of 128 log-mel bands. The battery anomaly demo would need a different model, or a microphone and the sound of a machine.
@@ -1096,8 +1157,7 @@ Left by earlier milestones, and worth going back to before a release, most impor
 | Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
 | A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
 | PWM and ADC | Left until something needs them (§11, M3). An Arduino user expects both early, and §7 has them as a tier of their own |
-| The B-L475E-IOT01A's missing pieces | SPI1 as controller, UART4, receiving through an interrupt and the random number source are written (§7), and wait to be run on the board (§1.2). Without them it cannot run MQTT or a LoRa radio |
-| Watchdog, reset reason, sleep | In §7's core tier. Sleep is what the battery demo needs |
+| Sleep | In §7's core tier, and what the battery demo needs. The watchdog and reset reason are done |
 | Generated register files | About sixty addresses on the C3 are hand-written, and each peripheral adds several (§12). It matters once a third chip comes |
 
 A first serious public release is M0 through M5.
@@ -1126,7 +1186,7 @@ Three use models Steady already runs on the C3.
 
 **Known gaps, none blocking:**
 
-- The B-L475E-IOT01A has less than the DevKitM-1 (§7), and its clock is uncorrected (§11, M4), so its time and timer events run 0.18% fast.
+- The B-L475E-IOT01A's clock is uncorrected (§11, M4), so its time and timer events run 0.18% fast.
 - Building for one board and then the other in the same folder writes the same files in `build/`, so the second build starts again from nothing.
 - Nothing checks that `i2c0.init` frees a sensor cut off mid-read by a reset. It was tried by hand, with a program that read without pause and was reset 16 times.
 - A driver's waits are forever: a link that loses a packet hangs, and the checks rely on the host's timeout. A program can bound its own with `wait(cond, within = ...)`, and an I2C transaction has a deadline of its own.
@@ -1136,17 +1196,17 @@ Three use models Steady already runs on the C3.
 - The addressable LED driver lights one LED. A strip needs the pulse generator's memory refilled as it plays.
 - The SPI controller copies through the bus's 64-byte buffer a byte at a time, which measured about 29% slower than the clock allows on a 300-byte transfer. Copying by words is the cheap fix. DMA is the full one, though it would not replace the copying path if, as believed and not tested, DMA cannot read from flash.
 - The trap vector is in flash (§5.5).
-- The tasks run on Linux only, and a board cannot be chosen by MAC address (§4.3).
+- The tasks have run on Linux only. The Windows build was tried under Wine, without a reset, and the macOS build not at all (§4.3). The `link` check needs a POSIX shell. A board cannot be chosen by MAC address.
 - An SPI transfer longer than the target armed goes wrong (§11, M2).
 - MQTT is QoS 0 only, with no user name, password or TLS, and a broker that turns a subscription down goes unnoticed (§8.3). A connection lost is not made again for the program.
 - The Wi-Fi network's name and password are built into the image, in flash, until the settings store can hold them.
 - A UART's `buffer` has to come before anything in the source that reads the port, a task's body included, so `uart1.buffer(...)` goes above `proc listen() {.task.}`. The build says so when it does not, but the rule surprises.
-- The ESP-AT driver works on the DevKitM-1 only: the B-L475E-IOT01A has no second UART written.
+- The ESP-AT driver has worked on the DevKitM-1 only. The B-L475E-IOT01A's UART4 works, and `nim wifi` through it waits for the AT module to be wired to it.
 - Answers from the AT module wait at most a few seconds, but the raw bytes after `+CIPRECVDATA:` are waited for without a limit.
 - `lutra/patches/fatal.nim` stands in for a file of Nim's own, `system/fatal`, and declares what that file did in Nim 2.2.6. A new version of Nim may change the file or what calls it (§5.6).
 - `nim monitor` names the line of a panic only in an image `nim flash` wrote from the same folder, to that port.
+- **`nim capture` on the B-L475E-IOT01A can begin with records from before the reset.** `pyocd reset` takes 0.6 s and pulls the reset line about 0.32 s in, and the board goes on printing until then, after the monitor has stopped dropping what came before. When a names packet, which comes every hundredth record, falls in that window, its records are taken for the capture's, as turns 600 to 605 were once in four tries. The board's first output after the reset comes before `pyocd` returns, so no cut by time is safe. The shell pipeline had the same window. A fix is for the board to mark its start, such as a lone zero byte from the startup, and for the monitor to drop records before it; not yet put to the author. A monitor started with `-d:reset` can show such a line too.
 - Builds carry debugging information, for `nim monitor`, which none of the board's memory holds but which makes the image file larger and the build a little slower.
-- The B-L475E-IOT01A's UART4, receiving through an interrupt, SPI1, random numbers and panics are written and not yet run (§7).
 
 **Risks:**
 
@@ -1249,6 +1309,14 @@ Added for M3, on hardware unless marked:
 | Pulse generator (RMT) | Base `0x6001_6000`, channel 0 out is signal 51. Its clock is off at reset: set bit 9 of `0x600C_0010`. `+0x68` = bits 31, 26, 24 and 0: on, from the 80 MHz clock undivided, with its memory written directly. `+0x10` for channel 0: bit 16 for one block of memory, a divider of 1 in bits 15:8, bit 6 to hold the pin low when idle. The channel's 48 words are at `+0x400`; a word is a time in ticks in bits 14:0 and a level in bit 15, then the same again in 30:16 and 31, and a zero word ends the list. Pulse bits 2:1 of `+0x10` to rewind, set bit 24 and then bit 0 to play, and bit 0 of `+0x38` says it is done; clear it at `+0x44` |
 | The board's LED | On IO8. Sent green, red, blue, high bit first, as 0.35 µs high and 0.9 µs low for a 0 and 0.7 µs high and 0.55 µs low for a 1, chosen to suit both WS2812 and SK6812 parts. The pulses were read back from the pin, and the LED shows red, green and blue when asked for each |
 
+Added for M5, by `nim resets`:
+
+| Peripheral | Facts |
+|---|---|
+| Watchdog | The first timer group's, at `0x6001_F048`. Write `0x50D8_3AA1` to `0x6001_F064` before writing its registers and 0 after. `+0x04` (`0x6001_F04C`) holds the prescale in bits 31:16; with bit 21 of `0x6001_F048` set it divides the 40 MHz crystal, so 40,000 is a millisecond. The first stage's time, in those ticks, is at `0x6001_F050`. `0x6001_F048` = bit 31 (on), 3 in bits 30:29 (the first stage resets the system), bit 21, and reset lengths of 7 in bits 20:18 and 17:15; then setting bit 22 takes it all up. Any write to `0x6001_F060` feeds it. 300 ms unfed reset the chip, which the boot ROM reported as `rst:0x7 (TG0WDT_SYS_RST)`; fed every 100 ms for a second, it did not |
+| Reset reason | Bits 5:0 of `0x6000_8038`, the code the boot ROM prints as `rst:`. `0x1` after `esptool`'s reset, which works the EN line, `0x7` after the watchdog, `0x3` after a restart. The other codes are from esp-idf, not seen |
+| Restart | Setting bit 31 of `0x6000_8000` resets the system; the boot ROM runs again and says `rst:0x3 (RTC_SW_SYS_RST)`. What the UART still had to send is lost, so `restart` waits for it first. Waiting one byte's time after the transmit FIFO's count reached 0 lost the last byte; two bytes' time was enough |
+
 Not verified: the reset-default function of each pin. Take it from the ESP32-C3 Technical Reference Manual.
 
 ### A.5 Building and flashing
@@ -1337,6 +1405,8 @@ proc start() {.exportc: "_start",
 - **GCC 11 writes DWARF 5, which the `addr2line` of Espressif's binutils 2.35 cannot read**: every address was `??:?`. `-gdwarf-4` fixes it.
 - **`fileExists` is false for a device**, such as `/dev/ttyUSB0` or a link to it in `/dev/serial/by-id/`. `test -e` in the shell is not.
 - **Inside a task, NimScript's `getCommand()` is `nop`**, not the task's name.
+- **`cast[string]` of a `seq[byte]` works only where the two are laid out alike.** The capture decoder named its columns that way, and on a 32-bit build the header gained two bytes. Copy the bytes.
+- **NimScript cannot open a device, sleep, resolve a link, or see the exit code of what `exec` runs**, only that it was not 0. Hence `lutra/host/monitor`, a program the tasks build, which writes its exit code to a file for them.
 
 ---
 
@@ -1366,7 +1436,7 @@ timeout 5 cat /dev/ttyUSB0
 - The sensor board is on the DevKitM-1 with MAC `7c:df:a1:59:c9:70`, with a wire from its ADM pin to ground (§11, M3).
 - Adafruit's design files for the sensor board, which settled what its pins join, are at `github.com/adafruit/Adafruit-LSM6DS33-LIS3MDL-PCB`.
 - The B-L475E-IOT01A is attached by its ST-LINK's USB socket and appears as `/dev/ttyACM0`. With it and one DevKitM-1 attached, no port needs naming for either. The author has two USB cables, so only two boards are attached at once.
-- As of 17 October the two DevKitM-1 are attached and the B-L475E-IOT01A is not. The one with MAC `84:f7:03:0a:a8:08` runs Espressif's AT firmware, 4.1.1.0, and is the Wi-Fi module for `nim wifi`; writing a Lutra program to it, as `nim wiring` and `nim link` do, erases the firmware, which is then written again as §9 says. The firmware's zip is from `dl.espressif.com/esp-at/firmwares/esp32c3/`. The other, MAC `7c:df:a1:59:c9:70`, has the sensor board and runs the programs. With both attached the port has to be named; `/dev/serial/by-id/` names each by its USB bridge's serial number, which does not swap on replug: `...4e11d5f2...` is the one with the sensor board, and `...64a0c207...` the AT module. ESP-AT takes its commands on IO6 and IO7, not on its USB port, which carries only its log.
+- As of the evening of 17 October the B-L475E-IOT01A and the sensor board's DevKitM-1 are attached, and the B-L475E-IOT01A has jumpers from D0 to D1 and from D11 to D12. The DevKitM-1 with MAC `84:f7:03:0a:a8:08` runs Espressif's AT firmware, 4.1.1.0, and is the Wi-Fi module for `nim wifi`; writing a Lutra program to it, as `nim wiring` and `nim link` do, erases the firmware, which is then written again as §9 says. The firmware's zip is from `dl.espressif.com/esp-at/firmwares/esp32c3/`. The other, MAC `7c:df:a1:59:c9:70`, has the sensor board and runs the programs. With both attached the port has to be named; `/dev/serial/by-id/` names each by its USB bridge's serial number, which does not swap on replug: `...4e11d5f2...` is the one with the sensor board, and `...64a0c207...` the AT module. ESP-AT takes its commands on IO6 and IO7, not on its USB port, which carries only its log.
 - The Wi-Fi network for `nim wifi` and the examples is in `~/.lutra-wifi`, which exports `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD`: `. ~/.lutra-wifi` before running them.
 - `pyocd` 0.45.1: `~/Documents/GitHub/Steady/.venv/bin/pyocd`, beside `esptool`. Not on `PATH`, so `export PYOCD=~/Documents/GitHub/Steady/.venv/bin/pyocd`. It reaches the probe without `sudo`; Steady's `tests/mcu/boards/stm32l475/board.sh` has the udev rule that allows that. A `pyocd` installed by `pipx` is now on `PATH` too, and is found without it.
 - The ARM compiler is Ubuntu's `arm-none-eabi-gcc` 10.3.1, on `PATH`, with its `newlib`.
@@ -1403,11 +1473,11 @@ Everything here was exercised on hardware unless marked otherwise.
 |---|---|
 | A port | Port A is at `0x4800_0000` and the rest follow `0x400` apart. Mode at `+0x00`, two bits a pin: 0 input, 1 output, 2 a peripheral's, 3 analog. Open drain at `+0x04`, a bit a pin. Pulls at `+0x0C`, two bits: 1 up, 2 down. Input at `+0x10`, output at `+0x14`. Writing a bit in the low half of `+0x18` sets a pin and in the high half clears it. Function numbers at `+0x20` and `+0x24`, four bits a pin |
 | Before its clock is on | A port's registers take nothing in. Reading a pin of an output gives the level at the pin |
-| Functions | USART1 is function 7 on PB6 (out) and PB7 (in). I2C2 is function 4 on PB10 (clock) and PB11 (data). PA9, PA10, PB13 and PB14 are listed as their alternatives from the datasheet and have not been tried |
+| Functions | USART1 is function 7 on PB6 (out) and PB7 (in). I2C2 is function 4 on PB10 (clock) and PB11 (data). UART4 is function 8 on PA0 (out) and PA1 (in). SPI1 is function 5 on PA5 (clock), PA6 (data in) and PA7 (data out). PA9, PA10, PB13 and PB14, and SPI1's PB3, PB4 and PB5, are listed as alternatives from the datasheet and have not been tried |
 | Edge interrupts | Sixteen lines, one for pin *n* of whichever port bits 4*n* of `0x4001_0008 + 4 × (n div 4)` name. Rising edges at `0x4001_0408`, falling at `0x4001_040C`, enabled at `0x4001_0400`, pending at `0x4001_0414` and cleared there by writing a 1. Lines 0 to 4 are interrupts 6 to 10, lines 5 to 9 share interrupt 23, and 10 to 15 share 40. An output pin's own edges raise its line |
 | The interrupt controller | In the core. Interrupt *n* is let through by bit *n* mod 32 of `0xE000_E100 + 4 × (n div 32)` |
 | Reading back | A pin's level reaches the input register a few cycles after it changes. Read on the next instruction after it is set, it gives the old level 99,999 times in 100,000 |
-| On this board | PB14 drives LED2. PC13 is the button and is held high by the board. PA4, PA5, PA15, PB2 and PC0 to PC5 follow their pulls, so nothing on the board drives them. PA5 as LED1, and which header pin is which, are from ST's manual UM2153, from memory |
+| On this board | PB14 drives LED2. PC13 is the button and is held high by the board. PA4, PA5, PA15, PB2 and PC0 to PC5 follow their pulls, so nothing on the board drives them. Of the Arduino header, D0 and D1 are PA1 and PA0, and D11 and D12 are PA7 and PA6: a jumper across each pair joined them. PA5 as LED1, and the other header pins, are from ST's manual UM2153, from memory |
 
 ### D.4 Peripherals used
 
@@ -1418,6 +1488,13 @@ Everything here was exercised on hardware unless marked otherwise.
 | Timers 2 and 5 | Bases `0x4000_0000` and `0x4000_0C00`, both 32 bits, counting the 80 MHz bus clock when `+0x00` = 1. Count at `+0x24`. Timer 2's `+0x04` = `0x20` tells others when it comes round, and timer 5's `+0x08` = 7 makes it count that: its first internal trigger is timer 2 |
 | I2C2 | Base `0x4000_5800`, clocked at 80 MHz. `+0x10` holds the timing: a divider less one in bits 31:28, then the data line's setup and hold in 23:20 and 19:16, and the clock's high and low times, each less one, in 15:8 and 7:0. `0x90F2_232B` is 100 kHz. `+0x00` = 1 enables it. A transfer is started by writing `+0x04`: the address in bits 7:1, bit 10 to read, a count of bytes in 23:16, bit 13 to start, and bit 25 to stop when the count is done. In `+0x18`, bit 1 asks for a byte to send (`+0x28`), bit 2 offers one received (`+0x24`), bit 4 says the device refused, bit 5 that a stop went out, which it does after a refusal too, and bit 6 that the count is done with no stop asked for. Bits 4 and 5 are cleared at `+0x1C` |
 | I2C2, on this board | Seven addresses answer: 0x1E (the LIS3MDL, whose identity register reads `0x3D`), 0x29, 0x2D, 0x56, 0x5D (`0xB1`), 0x5F (`0xBC`) and 0x6A (`0x6A`, an LSM6DSL, which `lutra_lsm6ds33` does not know) |
+| UART4 | Base `0x4000_4C00`, its clock bit 19 of `0x4002_1058`, interrupt 52, otherwise as USART1. 300 bytes came back through a jumper from D1 to D0, at 115200 baud, through the interrupt. The receive interrupt asked for before the port's clock is on is lost, as any write is (§11, M4), so `buffer` switches the clock on first, and `init` keeps the bit |
+| USART1 at 921600 baud | `setBaud` lets the last byte go, then turns the port off, writes the divider and turns it on: 64 KB echoed from the ST-LINK and back with none lost, polled and through the interrupt. The ST-LINK's port takes that rate |
+| SPI1 | Base `0x4001_3000`, its clock bit 12 of `0x4002_1060`. `+0x04` = `0x1700` gives 8-bit frames and a flag for each byte received. `+0x00` = bits 2, 8, 9 and 6, and the halvings of 80 MHz in bits 5:3, makes it the controller choosing devices by plain pins. In `+0x08`, bit 0 is a byte received, bit 1 room to send and bit 7 busy. Bytes are written to `+0x0C` a byte wide: a wider write sends two. Through a jumper from D11 to D12, 300 bytes came back at 10 MHz, and 1000 took 1263 µs, against 800 µs for the clock alone |
+| Random numbers | At `0x5006_0800`, its clock bit 18 of `0x4002_104C`. It wants 48 MHz, given by the second PLL from the same 4 MHz: `0x4002_1010` = 24 in bits 14:8 and bit 20, then bit 26 of `0x4002_1000`, waiting for bit 27, and 1 in bits 27:26 of `0x4002_1088`. Bit 2 of `+0x00` starts it; bit 0 of `+0x04` says a number is waiting at `+0x08`. The self-check's test of its numbers passes |
+| Watchdog | The independent one, at `0x4000_3000`, counting a 32 kHz oscillator of its own. Write `0xCCCC` to `+0x00` to start it, `0x5555` to unlock, a prescale of 4 × 2^*n* as *n* to `+0x04` and a count less one to `+0x08`, wait for `+0x0C` to read 0, then `0xAAAA`, which also feeds it. 300 ms unfed reset the chip; fed every 100 ms for a second, it did not |
+| Reset reason | Flags in bits 31:24 of `0x4002_1094`, kept across resets until bit 23 is written, so the startup reads and clears them. Bit 26, the reset pin, came with every reset seen: alone after `pyocd reset -m hw`, with bit 29 after the watchdog, with bit 28 after a restart. Bit 27, the supply, at power on is from the manual, not seen |
+| Restart | `0x05FA_0004` written to `0xE000_ED0C`, the core's reset request. Bit 28 of the reset flags is then set |
 | Faults | The status is at `0xE000_ED28`: bit 16 an undefined instruction, bits 12:9 a bad address read or written, bits 17, 8 and 0 a jump to one. Bit 15 says the address is at `0xE000_ED38`. The core pushes eight registers onto the stack in use, the instruction's address seventh and the link register sixth |
 
 ### D.5 Building and flashing

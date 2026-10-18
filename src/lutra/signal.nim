@@ -11,6 +11,12 @@
 ## scale, the natural logarithm of each band is taken, and a cosine transform
 ## of those gives the coefficients. This is what `tf.signal` computes, with
 ## its defaults.
+##
+## The Fourier transform underneath is there for other signals too:
+##
+##   var strength: array[128, int32]
+##   spectrum(samples, strength) # 256 samples in. Bin k is k × sampleHz / 256 Hz,
+##                               # and a sine of amplitude 1000 shows as about 1000
 
 import std/[math, bitops]
 
@@ -66,9 +72,11 @@ func cosines(coefficients, bands: static int): array[coefficients, array[bands, 
 
 func turn(x, by: int32): int32 {.inline.} = int32((int64(x) * by + (1 shl 29)) shr 30)
 
-proc transform[N: static int](re, im: var array[N, int32]) =
-  ## A Fourier transform, in place. Each result can be as large as its inputs
-  ## summed, which the caller leaves room for.
+proc fft*[N: static int](re, im: var array[N, int32]) =
+  ## A Fourier transform of `N` points, a power of two, in place and not
+  ## scaled. Each result can be as large as its inputs summed, so they need
+  ## that much room: at most 2^31 / N each.
+  when (N and (N - 1)) != 0: {.error: "fft: " & $N & " points is not a power of two.".}
   const rotation = rotations(N)
   var j = 0
   for i in 1..<N:
@@ -116,7 +124,7 @@ proc compute*(m: static Mfcc, samples: openArray[int16], output: var openArray[i
   var re, im: array[size, int32]
   for i in 0..<m.window:
     re[i] = int32((int64(samples[i]) * int64(window[i]) + (1'i64 shl (30 - fraction))) shr (31 - fraction))
-  transform(re, im)
+  fft(re, im)
   var strength: array[bins, uint32]
   for bin in 0..<bins:
     # Rounded to the nearest, by way of twice the root: always rounding down
@@ -135,5 +143,24 @@ proc compute*(m: static Mfcc, samples: openArray[int16], output: var openArray[i
     var sum = 0'i64
     for band in 0..<m.melBins: sum += int64(cosine[k][band]) * logs[band]
     output[k] = int32((sum + (1 shl 29)) shr 30)
+
+proc spectrum*[M: static int](samples: openArray[int16], strength: var array[M, int32]) =
+  ## How strong each frequency is in `2 * M` samples, through a Hann window:
+  ## bin k is k × sampleHz / (2 * M) Hz. A sine of amplitude A, between bins,
+  ## shows as about A in the nearest, in the units of the samples.
+  const
+    size = 2 * M
+    window = hann(size)
+    fraction = 16 - fastLog2(size) # Room for the transform's sums, as in `compute`
+  assert samples.len == size, "spectrum: " & $size & " samples are wanted for " & $M & " bins"
+  var re, im: array[size, int32]
+  for i in 0..<size:
+    re[i] = int32((int64(samples[i]) * int64(window[i]) + (1'i64 shl (30 - fraction))) shr (31 - fraction))
+  fft(re, im)
+  # A windowed sine of amplitude A peaks at A × size / 4, here 2^fraction finer
+  const shift = fraction + fastLog2(size) - 2
+  for k in 0..<M:
+    let power = uint64(int64(re[k]) * re[k] + int64(im[k]) * im[k])
+    strength[k] = int32((isqrt(power) + (1'u32 shl (shift - 1))) shr shift)
 
 when defined(lutraBoard): {.pop.}

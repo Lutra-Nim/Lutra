@@ -7,7 +7,7 @@ export esp32c3
 const
   memory* = Memory(flashSize: 4.MB)
   console* = uart0
-  consolePorts* = ["ttyUSB", "cu.usbserial"] ## What a host calls the USB bridge's port
+  consolePorts* = ["ttyUSB", "cu.usbserial", "Silabser"] ## What a host calls the USB bridge's port. On Windows, its driver's device, untried
 
   IO0* = Gpio(num: 0)
   IO1* = Gpio(num: 1)
