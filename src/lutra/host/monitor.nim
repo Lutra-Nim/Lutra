@@ -9,7 +9,9 @@
 ## line of the program an address in a panic or a fault is in. It ends at the
 ## first line holding `until`, at a panic or a fault, which stop the board, or
 ## after `timeout`. With `--records` it writes the board's records to stdout as
-## CSV, and everything else to stderr. It ends with a code of `Exit`, which it
+## CSV, and everything else to stderr; after a reset, only those from after
+## the program says it has started, as a board may go on recording for a
+## while before the reset takes it. It ends with a code of `Exit`, which it
 ## also writes to `status`, as NimScript's `exec` can't see it.
 ##
 ##   monitor --list                   Every serial port, and its device
@@ -83,6 +85,7 @@ var
   segment: seq[byte]
   replayed: int
   names = "" # Records before the first names are from before the board was reset
+  recording = true # After a reset, from the program's start: what came before is from before it
 
 type Segment = object # A link that is never sent to, only replayed
 proc send(s: static Segment, c: char) = discard
@@ -98,6 +101,10 @@ proc packetEnded() =
   var packet: array[4096, byte]
   let length = Segment().receiveFrame(packet)
   if length < 1: text(segment)
+  elif packet[0] == startKind:
+    recording = true
+    names = ""
+  elif not recording: discard
   elif packet[0] == namesKind:
     var header = ""
     for b in packet[1 ..< length]: header.add char(b)
@@ -214,4 +221,5 @@ if note != "":
   quit 0
 if flashed != "" and fileExists(noteFile(flashed)): elf = readFile(noteFile(flashed))
 if outFile != "": output = open(outFile, fmWrite)
+recording = reset == ""
 monitor()

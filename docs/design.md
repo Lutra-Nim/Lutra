@@ -94,7 +94,7 @@ How to confirm nothing is broken. Appendix C has the machine's set-up; with two 
 | `nim -d:board=b_l475e_iot01a loopback` | `checks/` | With jumpers from D11 to D12 and from D1 to D0: SPI1 brings back what it sends, into an input as long or shorter, and so does UART4, through its interrupt |
 | `nim resets`, and with `-d:board=b_l475e_iot01a` | `checks/` | Each board says the host reset it; fed, the watchdog waits, and starved for 300 ms it resets the board, which says so; then the board restarts, and says so |
 | `nim -d:board=b_l475e_iot01a echo` | `checks/` | 64 KB at 921600 baud through the ST-LINK comes back intact, polled and buffered |
-| `nim flash record.nim`, then `nim capture > button.csv` | `examples/` of either board | The CSV has its header, then turns from 0 with none missing. On the B-L475E-IOT01A, now and then a few records from before the reset come first (§12) |
+| `nim flash record.nim`, then `nim capture > button.csv` | `examples/` of either board | The CSV has its header, then turns from 0 with none missing |
 | `nim wifi` | `checks/` | With the second DevKitM-1 running Espressif's AT firmware and wired as for `nim wiring`, `lutra-espat` beside this repository, and the network in `LUTRA_WIFI_NETWORK` and `LUTRA_WIFI_PASSWORD`: the board joins it, and 20 messages to test.mosquitto.org come back in order, a long one whole; one too long is refused, the messages end when the connection does, and it connects again. With both boards attached it needs the port named |
 | `nim r tlsm6ds33.nim` and `nim r tlis3mdl.nim` | `tests/` of `lutra-lsm6ds33` and `lutra-lis3mdl` | Each sensor's driver against a stand-in for the bus |
 | `nim r tespat.nim` | `tests/` of `lutra-espat` | The AT driver against a stand-in module that answers as the real one was seen to |
@@ -760,7 +760,8 @@ nim capture > button.csv
 
 - A record is a packet of `framing`, so it arrives whole or not at all, and the board's `print`s can go between records. `nim capture` writes records to stdout as CSV and everything else to stderr, the boot ROM's messages included.
 - Values are whole numbers or `bool`s, each a signed varint: seven small ones take about 14 bytes with the packet's own.
-- A record's columns are named in the program: a value's name if it is given one, or else its expression. The names go with the first record from each line of the program and every hundredth after, so a capture recovers from a damaged first one. Records before the first names are taken for what the board sent before it was reset, and dropped.
+- A record's columns are named in the program: a value's name if it is given one, or else its expression. The names go with the first record from each line of the program and every hundredth after, so a capture recovers from a damaged first one.
+- Before the program's first record goes a packet of a third kind, saying it has started. `nim capture` resets the board, and takes records only from that packet on: a board goes on recording until the reset takes it, which on the B-L475E-IOT01A is about 0.3 s after the monitor stops dropping what came before, and its first output after the reset comes before the reset command returns, so no cut by time is safe. Before this, a names packet from before the reset that fell in that window made its records the capture's first. Without a reset, records before the first names are dropped.
 - The host's side is in Lutra, as a task, because Lutra already finds the port, resets the board and decodes `framing` on the host. It is built for the host the first time it is run.
 
 **Verified**: `record.nim` in each board's `examples/` captured at 100 Hz on both boards, from turn 0 and with no turn missing; and on the C3, records of seven values at 1 kHz with the console at 921600 baud, 10,755 of them over 11 s with none missing.
@@ -1133,6 +1134,7 @@ Found along the way, and fixed:
 - **Every timer event on the STM32L475 fired once as it started**, until the timer was told that only coming round counts (Appendix D).
 - **`write` failed inside a generic procedure of another package**, as `link.write "AT+CWJAP=\""` in `lutra_espat` did, because it named `put` for the caller's module to find. It now binds `put` itself, leaving it open to the caller's own (Appendix B).
 - **On the B-L475E-IOT01A, `buffer` before `init` received nothing.** `buffer` asked for the interrupt while the port's clock was off, and `init` wrote over it. Every program that buffers a second UART, as `nim wifi` does, writes them in that order. Fixed when `nim loopback` first ran UART4.
+- **`nim capture` on the B-L475E-IOT01A could begin with records from before the reset**, as turns 600 to 605 once did, when a names packet fell in the 0.3 s before `pyocd` pulled the reset line. The shell pipeline had the same window. A program now says it has started before its first record, and a capture counts from there (§8.2). Recording at 500 Hz, which puts names in that window nearly every time, each of five captures on each board began at turn 0.
 - **`nim loopback` panicked as written**, converting `i * 7` to a byte past 255, once checks were on. It had never run.
 - **`print` could not print an `openArray[char]`**, which a message's payload is. It can now, and string literals take that path too, which cost 26 bytes of code in `hello.nim` and 54 in `tasks.nim`.
 
@@ -1205,7 +1207,7 @@ Three use models Steady already runs on the C3.
 - Answers from the AT module wait at most a few seconds, but the raw bytes after `+CIPRECVDATA:` are waited for without a limit.
 - `lutra/patches/fatal.nim` stands in for a file of Nim's own, `system/fatal`, and declares what that file did in Nim 2.2.6. A new version of Nim may change the file or what calls it (§5.6).
 - `nim monitor` names the line of a panic only in an image `nim flash` wrote from the same folder, to that port.
-- **`nim capture` on the B-L475E-IOT01A can begin with records from before the reset.** `pyocd reset` takes 0.6 s and pulls the reset line about 0.32 s in, and the board goes on printing until then, after the monitor has stopped dropping what came before. When a names packet, which comes every hundredth record, falls in that window, its records are taken for the capture's, as turns 600 to 605 were once in four tries. The board's first output after the reset comes before `pyocd` returns, so no cut by time is safe. The shell pipeline had the same window. A fix is for the board to mark its start, such as a lone zero byte from the startup, and for the monitor to drop records before it; not yet put to the author. A monitor started with `-d:reset` can show such a line too.
+- A monitor started with `-d:reset` can show a line or two the board printed before the reset took it, as `pyocd reset` pulls the reset line about 0.3 s in. `nim capture` is not affected (§8.2).
 - Builds carry debugging information, for `nim monitor`, which none of the board's memory holds but which makes the image file larger and the build a little slower.
 
 **Risks:**
