@@ -45,6 +45,8 @@ With a board, from `checks/`: `nim selfcheck` (45 s) for each board touched. The
 
 A hardware fact is not relied on until a check has exercised it; then it goes in design.md Appendix A (ESP32-C3) or D (STM32L475).
 
+What a user would notice goes in [CHANGELOG.md](CHANGELOG.md), under a heading for the next release. While the version is 0.x, a change that breaks a program means the next release is a new minor version; the driver packages ask for one minor version at a time.
+
 ## Nim on the target
 
 There is no heap (`--mm:none`), and programs are built for size. Appendix B of design.md has the full list of surprises; the ones met most:

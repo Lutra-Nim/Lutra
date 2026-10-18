@@ -47,10 +47,12 @@ On 16 and 17 October, on the branch `feature/agents`, in the order the author ch
 
 Later on 17 October, on the branch `feature/libs-and-watchdog`, in one session with the B-L475E-IOT01A and the sensor board's DevKitM-1 attached: everything written for the B-L475E-IOT01A ran, and two bugs were fixed on the way (§11, M5); the tasks stopped needing `sh`, `stty` and `awk`, through a program for the host, `lutra/host/monitor` (§4.3); filters, statistics, trigonometry and a spectrum (§8.1); the watchdog, the reset reason and `restart` on both boards (§7), with a check of their own, `nim resets`; and `nim capture` no longer takes records from before a reset (§8.2). The session ended by putting the next steps to the author, below, and noting ideas for later (§11, "Later").
 
+Then, in the next session: Lutra and its three drivers made ready for Nimble's list (§8). Lutra installs, its self-check with it; the drivers ask for `lutra ^= 0.1` and use it as an installed package; `CHANGELOG.md` begins; and "TinyML" left the packages' descriptions, at the author's asking.
+
 Where to pick up, in the order the author agreed on 17 October:
 
-1. **Make Lutra installable by Nimble**, and list it and the three driver packages in Nimble's own list (§8). It is what a release most needs: the drivers, their examples, `nim sensors` and `nim wifi` all find each other as checkouts side by side, and `nimble install` has never been tried (Appendix B, on `installExt`). No hardware.
-2. **Loose ends, together with the first:**
+1. **Finish publishing** (§8). Lutra installs, and the drivers use it as a package; what is left is the author's: merging, tagging `v0.1.0` in all four repositories, and the pull request to `nim-lang/packages`, whose text is prepared. Once it is merged: `nimble install lutra_lis3mdl` in an empty Nimble directory, with no checkout, should fetch both, and `nimble check` should pass in each driver.
+2. **Loose ends:**
    - `nim wifi` through the B-L475E-IOT01A's UART4: the sensor board's DevKitM-1 unplugged, the AT module's plugged in, and its IO6, IO7 and ground wired to the B-L475E-IOT01A's D1, D0 and ground in place of the D0 to D1 jumper.
    - With both DevKitM-1 attached, `nim wiring` and `nim link`, which have not run since the tasks changed (§4.3).
    - Steady's other five models on both boards, with `nim -d:model=... steady`: §10's acceptance test for a board, of which only `kws` has run.
@@ -205,6 +207,7 @@ lutra/
     reg, claims              registers and compile-time ownership
     fmt, time, tasks, records, containers, framing, fixed, signal, ...   libraries (§8)
     host/                    programs for the host that the tasks build: the monitor (§4.3)
+    selfcheck/               each board's self-check and its expected output (§5.8)
   checks/                    hardware checks, with their tasks in config.nims
   examples/                  a folder for each board, with its own config.nims
   tests/                     host-side tests
@@ -243,7 +246,7 @@ The DevKitM-1 is flashed with `esptool` and the B-L475E-IOT01A with `pyocd`, thr
 
 Not built yet: selecting a board by MAC address, and an "all attached boards" mode. Krill flashes up to 16 boards at a time. Port names swap when boards are replugged, so the two-board checks simply take the two ports in name order.
 
-`checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `wiring`, `link`, `sensors`, `keywords` and `wifi`. `selfcheck` and these only work from Lutra's repository, because `checks/` is not installed with the package.
+`checks/config.nims` adds tasks that are not for every project: `steady`, `echo`, `resets`, `loopback`, `wiring`, `link`, `sensors`, `keywords` and `wifi`. These only work from Lutra's repository, because `checks/` is not installed with the package. `selfcheck` is installed: each board's program and its expected output are in `src/lutra/selfcheck/`, and the task copies the program into the project's `build/` folder to build it there, as Nim takes `config.nims` from a program's folder and those above it.
 
 **Decided**, 17 October 2026: the tasks need no shell tools, so that they run on Linux, macOS and Windows. What NimScript cannot do (Appendix B) is done by `lutra/host/monitor`, a program for the host that the tasks build the first time they need it, named after its sources so that a change builds it again. It opens the port (termios on Linux and macOS, Win32 on Windows), lists the ports, resets the board, sends a line, reads until a line, a time or a panic, names the line of a panic, decodes records, and ends with an `Exit` code. It replaced a pipeline of `sh`, `stty`, `awk` and `timeout`, and `capture.nim`. On Windows a port is opened by one program at a time, so the monitor lets go of it while the board is reset, and what the board says straight after is lost; Linux and macOS hold it throughout. On Windows the kind of port is told by its driver's device name, `Silabser` for the DevKitM-1's bridge and `USBSER` for the ST-LINK, from memory and not tried.
 
@@ -501,7 +504,7 @@ A port is accepted when its self-check passes and Steady's benchmark gives the r
 
 **Verified** on the DevKitM-1: everything in the list except heap allocation, plus the GPIO pull-down. The idle run is 30 seconds. The check runs once and ends in the fault, so the `selfcheck` command resets the board and reads from the first byte.
 
-**Verified** on the B-L475E-IOT01A: the same list, in a program of its own, `checks/b_l475e_iot01a.nim`. The clock is measured against the board's 32.768 kHz crystal, and the fault is reported by Lutra. A fault's report ends in an address, so the command accepts a last line that goes on past what was expected.
+**Verified** on the B-L475E-IOT01A: the same list, in a program of its own, `src/lutra/selfcheck/b_l475e_iot01a.nim`. The clock is measured against the board's 32.768 kHz crystal, and the fault is reported by Lutra. A fault's report ends in an address, so the command accepts a last line that goes on past what was expected.
 
 ---
 
@@ -636,15 +639,25 @@ restart()                                   # Once the console has sent what it 
 | Its own package, `lutra_<part>` | Anything tied to one external chip or module, or maintained by someone else | `lutra_lsm6ds33`, an SX126x LoRa driver, a driver for one cellular modem |
 
 - Nim compiles only what a program imports, so a bundled library costs nothing in the image. What it costs is sharing Lutra's version: a breaking change in one bundled library is a breaking release of all.
-- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/Lutra-Nim/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/Lutra-Nim/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Until Lutra can be installed as a package, their examples find Lutra as a checkout beside them, in a folder named `lutra`, and `nim sensors` finds them the same way, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
+- First-party drivers are separate packages from the start, to prove the interfaces can be used from outside this repository. The first two are for the chips on the author's sensor board: `lutra_lsm6ds33`, at `github.com/Lutra-Nim/Lutra-LSM6DS33`, and `lutra_lis3mdl`, at `github.com/Lutra-Nim/Lutra-LIS3MDL`. Each covers starting its sensor and reading it. Their examples and tests use Lutra as an installed package; `nim sensors` finds them as checkouts beside Lutra's, in `lutra-lsm6ds33` and `lutra-lis3mdl`.
 - How settled a module is belongs in its documentation, not in where it lives.
 
 **Proposed**, October 2026, for where the packages live and how they are found, and not yet agreed:
 
 1. **A GitHub organisation.** **Done** 16 October 2026: `github.com/Lutra-Nim`, since `lutra` is taken (§1.1). The four repositories moved to it before the first release, so that the release's links are the lasting ones: every driver and tutorial pointing at the author's own account makes moving dearer later, and GitHub's redirects do not reach Nimble's list or other people's notes. It also lets someone else keep a driver without holding the keys to Lutra, which answers part of the one-maintainer risk (§12).
-2. **Lutra installable by Nimble.** This comes before anything is listed anywhere. Nothing installs yet: the drivers find Lutra as a folder beside them (§11, M5).
-3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, such as `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first.
+2. **Lutra installable by Nimble.** **Done**, see below.
+3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first. **Prepared**, see below.
 4. **A directory of Lutra's own, later**: when there are a dozen packages or so, or people the author does not know are writing them. Until then the README's list of drivers serves. When it comes, it is a repository in the organisation holding an index in JSON, an entry for each package: the interfaces it needs or provides, its bus and address, the boards it was tested on, and the checks it passes. A page is made from the index, and agents read the index itself (§4.4). Nimble's list holds only a name, an address and tags.
+
+**Decided**, October 2026, for releases, after the author chose each:
+
+- **Versions are git tags**, `v0.1.0` first, on all four repositories, which is how Nimble finds them. While Lutra is 0.x, a release that breaks a program goes up in its second number and any other in its third. The drivers ask for one second number, `requires "lutra ^= 0.1"`, so a breaking release of Lutra cannot break a driver someone has installed. `CHANGELOG.md` starts with 0.1.0, as §4.4 planned.
+- **The self-check is installed** with the package, so `nim selfcheck` runs from any project.
+- **The drivers' examples and tests use the installed Lutra.** `nimble install -d` in a driver's repository installs it. To work on Lutra and a driver together: `nimble develop -a:../lutra` and `nimble setup` in the driver's repository, once. That writes `nimble.develop` and `nimble.paths`, which hold the machine's own paths and are ignored, and a `config.nims` that reads `nimble.paths` where there is one, which is kept. Nimble's global develop link, `nimble develop -g`, was tried and Nim did not find Lutra through it: the link names the repository, not its `src`.
+- **"TinyML" is not in what the packages say of themselves.** Lutra is for any microcontroller; TinyML is the author's aim with Lutra and Steady, and stays in this document.
+- **The four packages go to Nimble's list in one pull request**, tagged `embedded`, `microcontroller` and `lutra` among others.
+
+**Verified**, October 2026: the four packages install with `nimble install` into an empty Nimble directory, Lutra's self-check files with them, and each driver resolves `lutra ^= 0.1`. From a new project outside these repositories, with only the installed packages: `hello.nim` and a driver's example build, `nim doctor` builds the host's monitor from the installed copy, and `nim selfcheck` passes on both boards. A project's `config.nims` finds `lutra/project` because Nim reads Nimble's package folder, `~/.nimble/pkgs2`, from its own configuration before a project's; given on the command line as `--nimblePath`, the folder comes too late for `config.nims`. `nimble check` passes for Lutra; each driver's fails until `lutra` is in Nimble's list. Nim's list asks that a package build with the latest Nim, 2.2.12: with it, every host test and example of Lutra's and the drivers' builds and passes, both self-checks pass, and a panic names its line. Its `system/fatal`, which Lutra replaces (§5.6), changed only for `--os:standalone`, which Lutra does not use.
 
 The earlier rule was narrower: only what every other library must agree on was core, and everything in §8.2 to §8.4 was a separate package.
 
@@ -1162,7 +1175,6 @@ Left by earlier milestones, and worth going back to before a release, most impor
 
 | Gap | Why it matters |
 |---|---|
-| Installing Lutra as a package | The driver packages, their examples and `nim sensors` and `nim wifi` all find each other as checkouts side by side (§8). A release needs `nimble install` to work, which has never been tried (Appendix B, on `installExt`). Then the packages go in Nimble's list, from the `Lutra-Nim` organisation (§8) |
 | Steady's other five models | §10's acceptance test for a board is all six of Steady's models giving their reference checksums. Only `kws` has been run, on either board |
 | A microphone | M3's exit was keyword spotting from a microphone, reshaped for want of one (§11, M3). The B-L475E-IOT01A carries two, through its DFSDM, and an I2S microphone would serve the C3 |
 | PWM and ADC | Left until something needs them (§11, M3). An Arduino user expects both early, and §7 has them as a tier of their own |
@@ -1420,7 +1432,8 @@ proc start() {.exportc: "_start",
 - **Iterating an array literal places the array in constant data**, which is in flash. Startup code must use immediates only.
 - **`std/os` does not compile under `--os:any`.** Compute paths with string operations. `currentSourcePath` works inside an `include`d file.
 - **With `--mm:arc` the runtime always links `malloc`, `free` and `exit`.**
-- **Nimble installs only the extensions listed in `installExt`.** A linker script next to the sources needs its extension added.
+- **Nimble installs only the extensions listed in `installExt`.** A linker script next to the sources needs its extension added. Without `installExt`, `.nim` files are installed; with it, they are only if it lists `nim`. Lutra's lists `nim` and `expected`, for the self-checks.
+- **A project's `config.nims` applies only to programs in its folder and below.** Nim takes `config.nims` and `nim.cfg` from the folder of the program being compiled and the folders above it, not from where `nim` was run. A program inside an installed package is compiled with none of the project's settings, so `nim selfcheck` copies the board's program into the project's `build/` first.
 - **`p"text\n"` is a raw string literal.** The `\n` is not an escape. This is Ratel's `progmem` syntax and is one reason not to carry it over. `cstring"text\n"` is raw for the same reason; write `cstring("text\n")`. So is `newLit"\r\n"` in a macro, which sent AT commands ending in four characters `\`, `r`, `\`, `n`.
 - **Setting `--os:any` in `config.nims` is too late to stop the host's libraries being linked.** Nim's own `nim.cfg` has already added `-ldl` for a Unix host. Clear it with `switch("gcc.options.linker", "")`.
 - **Nim does not link again when only a linker script's contents change.** It compares the link command, not the files it names.

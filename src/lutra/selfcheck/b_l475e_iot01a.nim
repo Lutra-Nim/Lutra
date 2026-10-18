@@ -1,5 +1,5 @@
-## Hardware self-check for the B-L475E-IOT01A. Run it with
-## `nim -d:board=b_l475e_iot01a selfcheck`, with nothing wired to PC5.
+## Hardware self-check for the B-L475E-IOT01A. Run it with `nim selfcheck`,
+## from any project for this board, with nothing wired to PC5.
 
 import lutra
 import lutra/chips/stm32l475/[registers, clock, gpio]

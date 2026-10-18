@@ -1,5 +1,5 @@
 ## Hardware self-check for the ESP32-C3-DevKitM-1. Run it with `nim selfcheck`,
-## with nothing wired to IO4. IO18 and IO19 may have an I2C device on them or
+## from any project for this board, with nothing wired to IO4. IO18 and IO19 may have an I2C device on them or
 ## nothing.
 
 import lutra

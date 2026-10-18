@@ -1,5 +1,5 @@
 # Lutra
-### A Nim-only bare-metal stack for TinyML microcontrollers
+### A Nim-only bare-metal stack for microcontrollers
 
 Lutra is a hardware abstraction layer and library ecosystem in pure Nim, RISC-V first. It is a spiritual successor to [Ratel](https://github.com/PMunch/ratel) and the board layer underneath [Steady](https://github.com/garrettkinman/Steady).
 
@@ -8,6 +8,12 @@ The plan is in [docs/design.md](docs/design.md). So far there are two boards. Th
 ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, two UARTs, I2C, SPI as controller, a random number source, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it. Both boards have a watchdog, say why they last started, and can restart themselves.
 
 ## A first program
+
+```
+nimble install lutra
+```
+
+Then, in a folder of its own:
 
 ```nim
 # config.nims
@@ -36,7 +42,7 @@ nim monitor
 | `nim monitor` | Read the board's console. `-d:reset` resets it first, `-d:send=...` sends it a line, and `-d:until=PASS` or `-d:timeout=30s` end it |
 | `nim capture > data.csv` | Reset the board, and write its records as CSV |
 | `nim size hello.nim` | Build, and show what each memory region holds |
-| `nim selfcheck` | Run the board's hardware self-check and compare its output |
+| `nim selfcheck` | Run the board's hardware self-check and compare its output. Each board's says at its top what must not be wired |
 | `nim doctor` | Check that this machine has the board's compiler, its flasher and access to its port |
 
 Each ends with an exit code that says what went wrong: 1 the build, 2 a check, 3 the board, 4 a missing tool. [AGENTS.md](AGENTS.md) has more for coding agents.
@@ -127,7 +133,7 @@ Error: IO21 is claimed as UART0 TX and as a GPIO at blink.nim(8)
 
 The serial port is found when only one board of the kind is attached. Otherwise name it with `-d:port=/dev/ttyUSB1` before the command, or in `LUTRA_PORT`.
 
-Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks need no shell tools: the first that reads a port builds a small program for the host, in a few seconds, once. They have been run on Linux; on Windows, the program that reads the port has been tried under Wine, and on macOS it builds and has not run.
+Needs Nim 2.2.6 or later, and has also been run on 2.2.12, and for each board its compiler and its flasher. The tasks need no shell tools: the first that reads a port builds a small program for the host, in a few seconds, once. They have been run on Linux; on Windows, the program that reads the port has been tried under Wine, and on macOS it builds and has not run.
 
 | Board | Compiler | Flasher |
 |---|---|---|
@@ -138,11 +144,13 @@ Needs Nim 2.2.6, and for each board its compiler and its flasher. The tasks need
 
 The programs in [checks/](checks) are run from that folder and are set up for the DevKitM-1. `-d:board=b_l475e_iot01a` before a command builds for the other board.
 
-Drivers for parts that are not on the board are packages of their own. The first are [lutra_lsm6ds33](https://github.com/Lutra-Nim/Lutra-LSM6DS33), for an accelerometer and gyroscope, [lutra_lis3mdl](https://github.com/Lutra-Nim/Lutra-LIS3MDL), for a magnetometer, and [lutra_espat](https://github.com/Lutra-Nim/Lutra-ESPAT), for Wi-Fi through an ESP32 running Espressif's AT firmware.
+Drivers for parts that are not on the board are packages of their own, installed the same way, as `nimble install lutra_lis3mdl`. The first are [lutra_lsm6ds33](https://github.com/Lutra-Nim/Lutra-LSM6DS33), for an accelerometer and gyroscope, [lutra_lis3mdl](https://github.com/Lutra-Nim/Lutra-LIS3MDL), for a magnetometer, and [lutra_espat](https://github.com/Lutra-Nim/Lutra-ESPAT), for Wi-Fi through an ESP32 running Espressif's AT firmware. Every package of Lutra's is tagged `lutra` in Nimble's list.
+
+Lutra is at 0.1, and will change. While its version starts with 0, a release that breaks a program goes up in its second number, 0.2.0, and the drivers ask for the 0.1 releases only, so an upgrade of Lutra can't break them unawares. [CHANGELOG.md](CHANGELOG.md) says what each release changed.
 
 ## Checks
 
-Run from `checks/`. With two boards of one kind attached, those for one board need the port named. The first five also run on the B-L475E-IOT01A, with `-d:board=b_l475e_iot01a` before the command.
+Run from `checks/` in a clone of this repository, but for `nim selfcheck`, which runs from any project. With two boards of one kind attached, those for one board need the port named. The first five also run on the B-L475E-IOT01A, with `-d:board=b_l475e_iot01a` before the command.
 
 | Command | Does |
 |---|---|
@@ -170,6 +178,7 @@ The host-side tests are the `t*.nim` files in `tests/`, each run with `nim r`.
 | `src/lutra/*.nim` | Libraries: printing, text, logging, reading numbers, checksums, time, tasks, records, containers, framing, arithmetic and trigonometry in whole numbers, filters, statistics, audio features and spectra, AT commands, MQTT |
 | `src/lutra/project.nim` | The host side: board selection and the tasks above |
 | `src/lutra/host/` | Programs for the host that the tasks build: `monitor.nim` reads, resets and talks to a board on any of the three systems |
+| `src/lutra/selfcheck/` | Each board's hardware self-check, and what it should print |
 | `tools/` | Empty so far; for the register generator |
 | `checks/` | Hardware checks, for one board and for two wired together |
 | `examples/` | Example programs, in a folder for each board |

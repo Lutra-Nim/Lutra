@@ -258,11 +258,16 @@ template board*(default: static string) =
 
   task selfcheck, "Run the board's hardware self-check":
     let
-      check = source.parentDir / "checks" / name # Only in Lutra's repository
+      check = source / "lutra/selfcheck" / name # Installed with the package
       expected = readFile(check & ".expected").strip
+      program = buildDir() / "selfcheck.nim"
+    # Built from the project's folder, so that its config.nims applies. Nim
+    # takes that from the program's folder and those above it.
+    mkDir buildDir()
+    writeFile(program, readFile(check & ".nim"))
     need flasher()
-    build(check & ".nim")
-    flash(check, serialPort())
+    build(program)
+    flash(program, serialPort())
     let got = capture(serialPort(), resetCommand(serialPort()),
       expected.splitLines[0], expected.splitLines[^1]).strip
     if not got.startsWith(expected): # The last line may go on, with the address of a fault
