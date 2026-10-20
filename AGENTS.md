@@ -1,6 +1,6 @@
 # Working on Lutra
 
-Lutra is a bare-metal HAL and libraries in pure Nim. Two boards so far: `esp32c3_devkitm1` (RISC-V) and `b_l475e_iot01a` (Cortex-M4). The plan, the state of things and the conventions are in [docs/design.md](docs/design.md); read §1.2 before starting. [README.md](README.md) has the user's view and the repository layout.
+Lutra is a bare-metal HAL and libraries in pure Nim. Three boards so far: `esp32c3_devkitm1` (RISC-V), `b_l475e_iot01a` (Cortex-M4) and `lichee_rv_dock` (an Allwinner D1, 64-bit RISC-V, begun; design.md Appendix E says what it lacks). The plan, the state of things and the conventions are in [docs/design.md](docs/design.md); read §1.2 before starting. [README.md](README.md) has the user's view and the repository layout.
 
 ## Commands
 
@@ -43,7 +43,7 @@ Without a board: each `tests/t*.nim`, with `nim r` from `tests/`, and `nim build
 
 With a board, from `checks/`: `nim selfcheck` (45 s) for each board touched. The table in design.md §1.2 lists every check, what it proves and what it needs: a second board, wires, a sensor, Wi-Fi. Only two boards can be attached at once, so a check needing a board that is not attached waits for the user to swap cables. Say so rather than skipping it silently.
 
-A hardware fact is not relied on until a check has exercised it; then it goes in design.md Appendix A (ESP32-C3) or D (STM32L475).
+A hardware fact is not relied on until a check has exercised it; then it goes in design.md Appendix A (ESP32-C3), D (STM32L475) or E (D1).
 
 What a user would notice goes in [CHANGELOG.md](CHANGELOG.md), under a heading for the next release. While the version is 0.x, a change that breaks a program means the next release is a new minor version; the driver packages ask for one minor version at a time.
 
@@ -55,7 +55,7 @@ There is no heap (`--mm:none`), and programs are built for size. Appendix B of d
 - Much of the standard library allocates or raises: `std/algorithm`'s `sort`, `parseutils.parseInt`, `std/strformat`. Use `print`, `log.info`, a `Text` from `lutra/fmt` for building strings, and `lutra/parse` for reading numbers.
 - `cstring"a\n"` and `p"a\n"` are raw literals, so `\n` is two characters. Write `cstring("a\n")`.
 - Going through a constant array of strings allocates. Use `cstring`s or numbers.
-- `int` is 32 bits on the board and 64 on the host. Code that must agree with the host names its sizes: `int32`, `uint64`.
+- `int` is 32 bits on the first two boards and 64 on the host and the D1. Code that must agree with the host names its sizes: `int32`, `uint64`.
 - In a generic proc or one written against a concept, declare `send`, `receive` and `reset` with `mixin`, or they bind to `system`'s.
 - A proc declared in a template needs `{.gensym.}`, or a second use is a redefinition.
 - What a board does before the program goes in a procedure the startup calls, not at a module's top level.

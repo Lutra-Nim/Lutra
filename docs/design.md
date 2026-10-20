@@ -51,7 +51,7 @@ Then, in the next session: Lutra and its three drivers made ready for Nimble's l
 
 Where to pick up, in the order the author agreed on 17 October:
 
-1. **Finish publishing** (§8). Lutra installs, and the drivers use it as a package; what is left is the author's: merging, tagging `v0.1.0` in all four repositories, and the pull request to `nim-lang/packages`, whose text is prepared. Once it is merged: `nimble install lutra_lis3mdl` in an empty Nimble directory, with no checkout, should fetch both, and `nimble check` should pass in each driver.
+1. **Published** (§8). Since 19 October Lutra and its three drivers are in Nimble's list, at `v0.1.0`: `nimble install lutra_lis3mdl` into an empty Nimble directory fetched it and Lutra, and `nimble check` passes in all four repositories. A new release is a version in the `.nimble` file, a heading in `CHANGELOG.md`, and a tag (§8).
 2. **Loose ends:**
    - `nim wifi` through the B-L475E-IOT01A's UART4: the sensor board's DevKitM-1 unplugged, the AT module's plugged in, and its IO6, IO7 and ground wired to the B-L475E-IOT01A's D1, D0 and ground in place of the D0 to D1 jumper.
    - With both DevKitM-1 attached, `nim wiring` and `nim link`, which have not run since the tasks changed (§4.3).
@@ -64,6 +64,7 @@ Where to pick up, in the order the author agreed on 17 October:
 - **Left in M5:** raw flash storage on both chips and the settings store, which would also hold the Wi-Fi network, given for now when a program is built, from the environment; the LoRa driver; and the window of samples and the demos (§11).
 - **Left by earlier milestones**, and worth going back to before a release: the table at the end of §11, M5.
 - **Storage in flash** is set out in §8.4: how it works on each chip, what it opens up, three layers, and littlefs not yet. Before writing the settings store, put its shape to the author with an example of each: a small key-value store with wear-levelling, or a typed settings object saved and loaded whole and checked when the program is compiled. The second suits Lutra's way of settling things at compile time. `lutra/crc`'s `crc32` is there for it.
+- **A third board, a Linux-class chip, begun 20 October** for a TinyTTS demo with Steady: Sipeed's Lichee RV Dock, an Allwinner D1, whose core is a 64-bit RISC-V at 1008 MHz with a vector unit and 512 MB of DRAM (Appendix E). Lutra runs it bare, in machine mode, loading each program into DRAM over USB with `xfel`. `arch/riscv64`, `chips/d1` and `boards/lichee_rv_dock` have startup, clocks, caches, the FPU, GPIO, UART0, time, the cycle counter, interrupts through the chip's PLIC, timer events, tasks, the addressable LED, panics, a fault report and `restart`, and `nim selfcheck` passes on it. The host starts a running program again by a break on its console, which every program on the Dock takes as asking to restart into FEL, as the author chose (Appendix E); no hand is needed unless a program hangs with interrupts off. Steady's `kws` gives its reference checksum (§10), and the vector unit runs, though nothing of Steady's uses it yet. Not yet: pin interrupts, which take the pin from its output so that the self-check can't raise one itself; a buffered UART on the board; the watchdog for programs; the reset reason; and audio. Next, as agreed with the author: the vector unit for Steady's kernels, which is work in Steady, then the audio codec.
 - **Hardware:** as of 17 October the B-L475E-IOT01A and the sensor board's DevKitM-1 are attached, the AT module is not, and the B-L475E-IOT01A has jumpers from D0 to D1 and from D11 to D12 (Appendix C).
 
 What exists, all exercised on hardware:
@@ -199,10 +200,13 @@ lutra/
     project.nim              the host side: `board "..."` and the tasks (§4.3)
     arch/riscv32/            start.nim, trap.nim, context.nim
     arch/armv7m/             start.nim, interrupts.nim, fault.nim, context.nim
+    arch/riscv64/            start.nim, trap.nim, fault.nim, context.nim
     chips/esp32c3.nim        and chips/esp32c3/, one module per peripheral
     chips/stm32l475.nim      and chips/stm32l475/
+    chips/d1.nim             and chips/d1/
     boards/esp32c3_devkitm1.nim
     boards/b_l475e_iot01a.nim
+    boards/lichee_rv_dock.nim
     hal/                     the interfaces: pin, bytelink, i2c, spi
     reg, claims              registers and compile-time ownership
     fmt, time, tasks, records, containers, framing, fixed, signal, ...   libraries (§8)
@@ -646,7 +650,7 @@ restart()                                   # Once the console has sent what it 
 
 1. **A GitHub organisation.** **Done** 16 October 2026: `github.com/Lutra-Nim`, since `lutra` is taken (§1.1). The four repositories moved to it before the first release, so that the release's links are the lasting ones: every driver and tutorial pointing at the author's own account makes moving dearer later, and GitHub's redirects do not reach Nimble's list or other people's notes. It also lets someone else keep a driver without holding the keys to Lutra, which answers part of the one-maintainer risk (§12).
 2. **Lutra installable by Nimble.** **Done**, see below.
-3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first. **Prepared**, see below.
+3. **The packages in Nimble's own list**, `nim-lang/packages`, with a tag they share, `lutra`. Then `nimble install lutra_lis3mdl` works with nothing set up. A package list of Lutra's own would make every user add it to their configuration first. **Done**: merged on 19 October 2026, as `nim-lang/packages` pull request 3579, after the four repositories were tagged `v0.1.0`; installed from GitHub into an empty Nimble directory, all four came, the self-check with Lutra.
 4. **A directory of Lutra's own, later**: when there are a dozen packages or so, or people the author does not know are writing them. Until then the README's list of drivers serves. When it comes, it is a repository in the organisation holding an index in JSON, an entry for each package: the interfaces it needs or provides, its bus and address, the boards it was tested on, and the checks it passes. A page is made from the index, and agents read the index itself (§4.4). Nimble's list holds only a name, an address and tags.
 
 **Decided**, October 2026, for releases, after the author chose each:
@@ -920,6 +924,8 @@ Steady stays independent of Lutra. Steady defines a minimal board contract and L
 **Verified** on Lutra: the same benchmark, run with `nim steady` in `checks/`, gives `ab2fdbf1` and 44.40M cycles, with weights in flash and no allocator symbols. Later changes to Lutra moved code about and the count became 44.26M; with Steady at `a9a2f44` it is 43.49M. The other five models have not been run.
 
 **Verified** on the B-L475E-IOT01A: `nim -d:board=b_l475e_iot01a steady` gives `ab2fdbf1` and 41.65M cycles, with the prefetch and both of the chip's flash caches on. Steady's C path gave 43.32M at the same setting, from an older build of Steady. The C3 gave 43.64M the same day. The adapter is `checks/steady.nim` for both, with the chip's timebase, cache and LED chosen at the top.
+
+**Verified** on the Lichee RV Dock, 20 October 2026: `nim -d:board=lichee_rv_dock steady` gives `ab2fdbf1` and 23.80M cycles, 23.6 ms at 1008 MHz, with Steady at `b90ea6d`: about 9 cycles for each of the model's 2.66M multiply-adds, in plain RV64 code with T-Head's extra instructions and no vector unit. The model is in DRAM, behind the 32 KB caches. The C3 took 43.64M cycles, 273 ms, and the STM32L475 41.65M, 520 ms. The image takes the console's interrupt, for a break, which does not come while the benchmark runs.
 
 Acceptance test for every board port: all six of Steady's reference models give the reference checksums, with cycle counts comparable to the C path.
 
@@ -1497,6 +1503,8 @@ timeout 5 cat /dev/ttyUSB0
 - `pyocd commander -t stm32l475xg -c halt -c "reg pc" -c "read32 0x40021000 16" -c go` reads the chip's registers while a program runs, which is how the first silent console was explained.
 - The Windows build of `lutra/host/monitor` was tried from this machine, on 17 October, and nothing of it was kept: Zig, from `pip install ziglang` in a scratch virtual environment, as Nim's C compiler (`--os:windows --cpu:i386 --cc:clang` with `clang.exe` a script running `python -m ziglang cc -target x86-windows-gnu`), and Ubuntu's Wine 6, whose prefix is 32-bit. Wine maps COM ports from `HKLM\Software\Wine\Ports`, set with `wine reg add 'HKLM\Software\Wine\Ports' /v COM5 /d /dev/ttyACM0`; a link written in `dosdevices` by hand is replaced when Wine starts. The same Zig, with `-target aarch64-macos`, links the macOS build.
 - The author has no I2S microphone, and has a small speaker for a breadboard, of a kind not yet known (§11, "Later").
+- Since 20 October the Lichee RV Dock is attached twice: its console through a CP2102 adapter on the TX and RX pins underneath, `/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`, which was `/dev/ttyUSB4`; and the module's USB-C port, for FEL. Two Digilent FPGA boards on FT2232s take `/dev/ttyUSB0` to `3`, so `LUTRA_PORT=/dev/ttyUSB4` has to be set for the Dock. The SD card holds Sipeed's Linux, which does not start (Appendix E). Programs reach FEL without `sudo`: the logged-in user has the USB device through an ACL.
+- The Dock's compiler is xPack's `riscv-none-elf-gcc` 15.2.0-1, unpacked in `~/.local/xPacks/riscv-none-elf-gcc/`, where Lutra finds it. `xfel` was built from `github.com/xboot/xfel` at `445e8ae` against `libusb.h` 1.0.25, as Mint has the library but not its header, and is in `~/.local/bin`, which the shell's profile puts on `PATH`.
 
 ---
 
@@ -1559,6 +1567,60 @@ Everything here was exercised on hardware unless marked otherwise.
 - Linker flags: `-nostartfiles --specs=nosys.specs -Wl,--gc-sections` and the linker script. The stubs are there because Nim's runtime refers to `exit`, which this C library builds on `_exit`. None is linked into hello world.
 - `pyocd flash -t stm32l475xg app.elf` programs the linked file as it is and starts it. `pyocd reset -m hw -t stm32l475xg` resets it by its reset pin, in 0.8 s. Without `-m hw` it asks the core to reset itself, which took 5.75 s, and near the end the probe stopped the core for a third of a second.
 - Hello world over serial is 2812 bytes of flash and no RAM.
+
+## Appendix E: D1 bring-up facts
+
+For Sipeed's Lichee RV Dock: the Lichee RV module, an Allwinner D1 with 512 MB of DDR3 and a green LED, on a carrier with an addressable LED. Addresses are from mainline Linux's device tree and drivers for the D1 (`sunxi-d1s-t113.dtsi`, `sun20i-d1-lichee-rv*.dts`, `ccu-sun20i-d1.c`, `pinctrl-sunxi.h`, `pinctrl-sun20i-d1.c`, `leds-sun50i-a100.c`, `sunxi_wdt.c`), not from memory. Sipeed's schematic is behind a captcha.
+
+Everything here was exercised on hardware on 20 October 2026 unless marked otherwise.
+
+### E.1 Boot, and loading a program
+
+- The boot ROM reads Allwinner's first stage, boot0, from the SD card. boot0 sets the DRAM up and loads OpenSBI 0.6, in machine mode at `0x4000_0400`, and then U-Boot 2018.05 in supervisor mode. With no boot medium the boot ROM waits for USB instead, as FEL, on the module's USB-C port, as `1f3a:efe8`.
+- The card on the author's Dock reaches U-Boot, whose own SD driver then times out on every read and finds no partitions; boot0 reads it fine. U-Boot's log says its device tree has no `mmc0`. So Linux does not start, and U-Boot stops at its prompt.
+- **How Lutra loads a program.** At U-Boot's prompt, `efex` starts the chip again; boot0 sees a flag and hands over to the boot ROM's FEL. `xfel ddr d1` then sets the DRAM up (DDR3 at 792 MHz), `xfel write 0x40000000` writes the image, and `xfel exec 0x40000000` calls it in machine mode. A program that returns, returns to FEL. 2 KB is written in under a second; 200 KB at 370 KB/s.
+- Said during U-Boot's two-second countdown, `efex` loses its first letter to stopping the count, so `nim flash` says it twice when it must.
+- **The instruction cache is on in FEL, and `xfel write` goes behind it.** A second, different program at the same address ran a mix of its own and the last one's instructions, and hung. `fence.i` empties the cache. A program can't run it before its first instructions are fetched, so the first 64-byte line of every Lutra program is the same, `fence.i` and a jump past the line, and a stale copy of it is still right. Moving from a program without that line needs a reset. A reset empties the cache: the first program after one has never been wrong.
+- The data cache is off, and so are the FPU and the vector unit: `mstatus` reads `0xa_0000_0188`, its FS and VS fields 0. `mhcr` (`0x7c1`) reads `0x109`. `mxstatus` (`0x7c0`) reads `0xc040_8000`: machine mode, T-Head's own instructions on.
+- `misa` reads `0x8000_0000_00b4_112d`: RV64 with A, C, D, F, I, M, S, U, V and X. `mvendorid` is `0x5b7`, T-Head.
+- **How the host starts a running program again.** The program is in DRAM, which a reset does not keep, and the author's console adapter brings out no DTR to join to the reset, so it is done in software, as the author chose on 20 October. `0x5AA5A55A` in the RTC's spare register 2, `0x0709_0108`, which a reset keeps, and then a restart through the watchdog: boot0 starts, prints its two lines, sees the note, clears it and goes to FEL, with no U-Boot. That is what U-Boot's `efex` does too, which wrote it and was seen to leave it cleared. Every program on the Dock takes a break on its console, the line held low for longer than a byte, through UART0's interrupt, as asking for that, and so does a program stopped by a panic or a fault, by looking for it in its stop loop (§5.6). `lutra/host/fel`, a program for the host, sends the break, waits for FEL, says `efex` once a second if that brought nothing, as for U-Boot at its prompt, and loads the program: `nim flash` with the new one, the reset of `nim monitor -d:reset` and the checks with the one last flashed. From a running or a halted program to the new one running took 12 s, most of it the chip coming back on USB; the self-check task takes 57 s. A program that hangs with interrupts off needs the board's reset button.
+
+### E.2 Core, cache and clock
+
+- **Data cache.** `dcache.ciall` (`.word 0x0030000b`) and then setting bits 1, 2, 4, 5 and 12 of `mhcr`: the cache, its writes allocating, its refills and branch prediction. It then reads `0x13f`: bit 12 does not stick. A loop that reads and writes the stack took 206.6 cycles a turn before and 7.0 after. Peripherals' registers are not cached with the MMU off: the UART works with the cache on.
+- FS is bits 14:13 of `mstatus`, set to 1 at start. The C906's vector unit is the extension's draft 0.7.1, whose VS field is bits 24:23; with bit 23 set at start, the self-check's `th.vsetvli` for 32-bit elements in one register gives 4 lanes, 128 bits, and `th.vle.v`, `th.vadd.vv` and `th.vse.v` add four pairs. The assembler takes T-Head's instructions after `.option arch, +xtheadvector`.
+- **Clock.** 1008 MHz from the CPU PLL at `0x0200_1000`: N less one is 41, in bits 15:8. The core is put on the crystal first by writing `0x100` to `0x0200_1D00` (the bus behind it at half), then the PLL is set with its regulator (bit 30), lock detection (29) and itself (31) on and its output (27) off, and when bit 28 says it has locked, its output is let through and the core moved onto it, `0x0500_0100`. Measured against the 24 MHz `time`: 1008.0 MHz, and within 1% in the self-check.
+- `time` counts 24 MHz from the crystal, 64 bits, readable in machine mode, from the last reset. `mcycle` counts the core's clock.
+- APB1, which the UARTs are on, is put straight on the crystal, `0x0200_1524` = 0, whatever loaded the program left there.
+
+### E.3 Pins
+
+| What | Facts |
+|---|---|
+| A port | Port B's block is at `0x0200_0030`, and the rest follow `0x30` apart, as if port A were first. Function at `+0x00` to `+0x0C`, four bits a pin: 0 input, 1 output, then the peripherals'. Levels at `+0x10`. Pulls at `+0x24`, two bits: 1 up, 2 down; not yet tried. There is no register that sets or clears one pin |
+| Ports | B has 13 pins, C 8, D 23, E 18, F 7 and G 19 |
+| Functions | UART0 is 6 on PB8 (out) and PB9 (in). The LED controller is 4 on PC0 |
+| On this board | PC1 drives the module's green LED, and reads back what it drives. PC0 is the Dock's addressable LED. The console is PB8 and PB9, on the pins marked TX and RX underneath the Dock |
+
+### E.4 Peripherals used
+
+| Peripheral | Facts |
+|---|---|
+| UART0 | Base `0x0250_0000`, a 16550 with its registers a word apart. Its bus clock is bit 0 of `0x0200_190C`, and bit 16 takes it out of reset. Clocked from APB1 at 24 MHz, the divider for 115200 is 13, 0.2% off; 921600 can't be made, and 1500000 can exactly. Line control at `+0x0C`, bit 7 to reach the divider at `+0x00` and `+0x04`. In the line status at `+0x14`, bit 0 is a byte waiting, bit 5 an empty transmit FIFO, bit 6 the line empty too |
+| LED controller | Base `0x0200_8000`. Its bus clock is bit 0 of `0x0200_1BFC`, out of reset bit 16, and its own clock `0x0200_1BF0` = bit 31, from the crystal. Bit times at `+0x04` and the quiet after at `+0x0C`, in 41.7 ns ticks; `+0x00` takes a count of words in bits 28:16, the colour order in 8:6 (2 for green first) and bit 0 to send; each LED's word, red in 23:16, goes to `+0x14`; bit 0 of `+0x20` says it is sent. **Verified** that it says so; whether the colours were right is for an eye |
+| Interrupt controller | A PLIC at `0x1000_0000`, its context 0 the core in machine mode: a source's priority at `+4 × n`, its bit to let it through at `0x1000_2000`, the threshold at `0x1020_0000`, and the claim at `0x1020_0004`, read for the next waiting source and written with it when handled. Bit 11 of `mie` lets it through to the core. Sources are Linux's numbers plus 16: UART0 is 18, the timers 75 and 76, the pin banks 85 to 95 |
+| Taking an interrupt twice | A handler that clears its source's flag and returns at once was taken again: the timer's 1 ms events came 192 times in 100 ms. Reading the flag back after clearing it, so that the write has landed before the PLIC hears the interrupt is handled, made it 100. The UART's handler reads its port until it says nothing is waiting, and was never seen to |
+| Timers | The timer block at `0x0205_0000`: interrupts enabled in `+0x00` and flagged in `+0x04`, a bit a timer, cleared by writing a 1. Timer *n*'s control at `+0x10 + 0x10n`, its interval at `+0x14 + 0x10n`. Control `0x7`, bit 2 for the 24 MHz crystal and bits 1 and 0 to take the interval and count, counts down from the interval and starts again. Events every 1 ms came within 1%, held off by `critical:` for 3 ms they came once on the way out, and `every` kept its turns |
+| UART0's interrupt | Interrupt enable at `+0x04` with the divider not reached: bit 0 for bytes waiting, bit 2 for the line's status. Why it interrupted is in the low four bits of `+0x08`, read: 6 the line, cleared by reading the status at `+0x14`, whose bit 4 says a break came; 4 bytes waiting, 0xC some with the line gone quiet, 7 written to while busy, cleared by reading `+0x7C`; 1 nothing more. A break of a quarter of a second from the CP2102, by `tcsendbreak`, restarted every program it was sent to. The buffered receive is written and has not run |
+| Restart | The watchdog of the timer block: `0x0205_00B4` with bits 1:0 set to 1 and the key `0x16AA` in 31:16, then `0x0205_00B8` the same way with bit 0 and the shortest time, then `0xA57 << 1 | 1` to `0x0205_00B0`. The chip restarted through boot0 into U-Boot |
+
+### E.5 Building
+
+- The compiler is xPack's `riscv-none-elf-gcc`, 15.2, with its newlib. Espressif's GCC 11 builds RV64 too, but has no RV64 libraries and takes `xtheadvector` without complaint and ignores it.
+- Compiler flags: `-mcpu=thead-c906 -mabi=lp64d -mcmodel=medany -ffunction-sections -fdata-sections`. `thead-c906` brings T-Head's instructions for addresses, bit fields, multiplying and adding, and pairs of loads and stores, but in GCC 15 not `zifencei`: the startup asks for it, for its `fence.i`.
+- Linker flags: `-nostartfiles --specs=nosys.specs -Wl,--gc-sections -Wl,--no-warn-rwx-segments` and the linker script. The whole image is in DRAM at `0x4000_0000`, `.data` included, so nothing is copied at start; the stack grows down from the top of DRAM.
+- GCC 15 vectorizes nothing for `xtheadvector` at `-O3`: Steady's kernels for it will be written with its intrinsics.
+- Hello world is 2 KB. The self-check, with its 200 KB table, is 205 KB.
 
 ---
 

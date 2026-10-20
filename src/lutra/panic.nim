@@ -6,7 +6,7 @@
 ##
 ## `nim monitor` adds the line of the program the address is in.
 
-import fmt
+import fmt, tasks
 import hal/bytelink
 
 template reportPanics*(sink: static ByteSink) =
@@ -20,7 +20,7 @@ template reportPanics*(sink: static ByteSink) =
         sink.put cstring(" at 0x")
         sink.put hex(cast[uint32](at))
       sink.put '\n'
-      while true: discard
+      halt()
 
   # Nim calls `exit` when a program quits or an exception goes uncaught. This
   # one keeps the C library's out of the image, and its 1 KB of RAM on ARM.

@@ -1,0 +1,21 @@
+BEGIN selfcheck
+clock ok
+delay ok
+millis ok
+cache ok
+fpu ok
+vector ok
+gpio output ok
+random ok
+constants ok
+led sent ok
+tasks ok
+tasks delay ok
+tasks wait ok
+tasks fpu ok
+timer ok
+interrupts ok
+tasks in handler ok
+every ok
+idle ok
+Fault: illegal instruction at

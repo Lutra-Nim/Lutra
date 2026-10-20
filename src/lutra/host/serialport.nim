@@ -145,6 +145,20 @@ proc write*(port: SerialPort, text: string) =
   port.write(text.toOpenArrayByte(0, text.high))
 
 when defined(windows):
+  proc setCommBreak(h: Handle): WINBOOL {.importc: "SetCommBreak", dynlib: "kernel32", stdcall.}
+  proc clearCommBreak(h: Handle): WINBOOL {.importc: "ClearCommBreak", dynlib: "kernel32", stdcall.}
+
+proc sendBreak*(port: SerialPort) =
+  ## Holds the line low for about a quarter of a second, longer than any byte
+  ## takes, which a board can tell from anything sent
+  when defined(windows):
+    if setCommBreak(port.handle) == 0: port.fail "Can't send a break on"
+    sleep 250
+    discard clearCommBreak(port.handle)
+  else:
+    if tcSendBreak(port.fd, 0) != 0: port.fail "Can't send a break on"
+
+when defined(windows):
   proc regOpenKeyExW(key: uint, subKey: WideCString, options, sam: int32, result: ptr uint): int32 {.
     importc: "RegOpenKeyExW", dynlib: "advapi32", stdcall.}
   proc regEnumValueW(key: uint, index: int32, name: ptr uint16, nameLen: ptr int32, reserved: pointer,

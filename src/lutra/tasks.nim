@@ -18,9 +18,18 @@
 import hal/bytelink, fmt
 
 {.emit: "__attribute__((weak)) void lutraIdle(void) {}".}
+{.emit: "__attribute__((weak)) void lutraHalted(void) {}".}
 
 proc idle*() {.importc: "lutraIdle", cdecl.}
   ## Lets the other tasks run, if there are any
+
+proc halted() {.importc: "lutraHalted", cdecl.}
+
+template halt*() =
+  ## Stops for good, once a panic or a fault has been reported. A board whose
+  ## host has no other way to start it again defines `lutraHalted` to watch
+  ## for the host asking.
+  while true: halted()
 
 template wait*(condition: untyped) =
   ## Lets the other tasks run until `condition` holds
@@ -89,7 +98,7 @@ proc pass*(console: static ByteSink) =
     console.put cstring(" overflowed its stack of ")
     console.put task.size
     console.put cstring(" bytes\n")
-    while true: discard
+    halt()
   running = task.next
   if running != task: switch(addr task.saved, running.saved)
 

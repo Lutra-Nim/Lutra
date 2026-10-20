@@ -2,6 +2,11 @@
 
 While Lutra's version starts with 0, a release that breaks a program goes up in its second number, and any other in its third. The driver packages ask for one second number at a time, as `requires "lutra ^= 0.1"`.
 
+## Next
+
+- A third board, Sipeed's Lichee RV Dock: an Allwinner D1, a 64-bit RISC-V at 1008 MHz with 512 MB of DRAM, run bare. Startup, GPIO, its console UART, time, the cycle counter, interrupts, timer events, tasks, its addressable LED, panics, a report of faults, restarting and its self-check. Programs are loaded into DRAM over USB by `xfel`, which `nim doctor` looks for with the compiler, xPack's `riscv-none-elf-gcc`. The host starts a program again by sending a break on the console, which every program on the board answers by restarting to be loaded. Not yet: pin interrupts, the watchdog and the reason the board started.
+- A board may define `lutraHalted`, which a program stopped by a panic or a fault calls over and over: the Dock's looks for the host asking it to start again. Other boards stop as before.
+
 ## 0.1.0
 
 The first release.
