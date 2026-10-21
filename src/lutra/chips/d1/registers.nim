@@ -23,7 +23,7 @@ const
   # UARTs, which are 16550s, their registers a word apart
   uartData* = 0x00'u32 ## What comes in and goes out, or the divider's low byte
   uartDividerHigh* = 0x04'u32
-  uartInterruptEnable* = 0x04'u32 ## Where the divider's high byte is, while that is reached
+  uartInterruptEnable* = 0x04'u32 ## Or, while the divider is reached, its high byte
   uartFifoControl* = 0x08'u32 ## Written; read, it says why the port interrupted
   uartLineControl* = 0x0C'u32
   uartLineStatus* = 0x14'u32

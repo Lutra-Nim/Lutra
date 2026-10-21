@@ -1,8 +1,9 @@
 ## Starting the chip again. The watchdog for programs, and the reason the
 ## chip last started, are not written yet.
 ##
-## A program is in DRAM, which a restart does not keep, so the chip starts
-## whatever is on its SD card, or waits for one over USB.
+## A program is in DRAM, which a restart does not keep: `restartNow` starts
+## whatever is on the SD card, and `restartIntoLoader` waits for a program
+## from the host over USB.
 
 import registers
 

@@ -158,7 +158,7 @@ Run from `checks/` in a clone of this repository, but for `nim selfcheck`, which
 | Command | Does |
 |---|---|
 | `nim selfcheck` | The board's own hardware: clock, time, pins, interrupts, flash, I2C, the LED's signal, tasks, timers, the fault report |
-| `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository |
+| `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository. `-d:backend=<folder>` builds it with a Steady backend from that folder |
 | `nim sensors` | Reads an LSM6DS33 and a LIS3MDL on IO18 and IO19 through their driver packages, checked out beside this repository. On the B-L475E-IOT01A, the LIS3MDL the board carries |
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
 | `nim resets` | The watchdog resets the board when it is not fed, the board restarts itself, and each time it says why it started |

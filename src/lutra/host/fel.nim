@@ -2,18 +2,21 @@
 ## and starts it: what the D1's `nim flash` does, and its reset, for
 ## `nim monitor -d:reset` and the checks. `lutra/chips/d1/host` builds it.
 ##
-##   fel --port=P --xfel=X (--image=BIN | --flashed=DIR)
+##   fel --port=P --xfel=X --address=A (--image=BIN | --flashed=DIR)
 ##
-## With `--flashed`, the image is the one `nim flash` last wrote to the board
-## on P. A chip not waiting in FEL is first sent a break on its console,
-## which a Lutra program takes as asking to start again into FEL, and then,
-## if that brought nothing, `efex` once a second, which U-Boot on its SD card
-## takes the same way. It ends with a code of `Exit`.
+## The image is written to DRAM at `A` and started there. With `--flashed`,
+## it is the one `nim flash` last wrote to the board on P. A chip not waiting
+## in FEL is first sent a break on its console, which a Lutra program takes
+## as asking to start again into FEL, and then, if that brought nothing,
+## `efex` once a second, which U-Boot on its SD card takes the same way. It
+## ends with a code of `Exit`.
 
 import std/[os, osproc, parseopt, strutils, times, streams]
 import serialport, ../tooling
 
-var port, xfel, image, flashed: string
+var
+  port, xfel, image, flashed: string
+  address = -1
 
 proc finish(code: Exit, message = "") {.noreturn.} =
   if message != "": stderr.writeLine message
@@ -50,9 +53,10 @@ for kind, key, value in getopt():
   of "xfel": xfel = value
   of "image": image = value
   of "flashed": flashed = value
+  of "address": address = value.parseInt
   else: finish buildFailed, "Error: fel does not know --" & key & "."
 
-if xfel == "" or port == "": finish buildFailed, "Error: give --port and --xfel."
+if xfel == "" or port == "" or address < 0: finish buildFailed, "Error: give --port, --xfel and --address."
 if flashed != "":
   let note = flashed / canonical(port).lastPathPart
   if not fileExists(note): finish noBoard, "Error: nothing has been flashed to the board on " & port & " from here."
@@ -70,6 +74,7 @@ if not waiting():
   link.close()
 
 # The program has nowhere to live until the DRAM is set up
-for step in [@["ddr", "d1"], @["write", "0x40000000", image], @["exec", "0x40000000"]]:
+let at = "0x" & address.toHex(8)
+for step in [@["ddr", "d1"], @["write", at, image], @["exec", at]]:
   if run(step, quiet = false).code != 0:
     finish noBoard, "Error: xfel " & step[0] & " failed."

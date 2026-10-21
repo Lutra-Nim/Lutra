@@ -90,8 +90,8 @@ proc loader(arguments: openArray[string]): string =
 proc flash*(elf: string, m: Memory, port: string) =
   let image = elf.changeFileExt("bin")
   exec tool"objcopy" & " -O binary " & quoteShell(elf) & " " & quoteShell(image)
-  exec loader(["--port=" & port, "--xfel=" & xfel(), "--image=" & image]) # It says why, if it fails
+  exec loader(["--port=" & port, "--xfel=" & xfel(), "--address=" & $dramStart, "--image=" & image]) # It says why, if it fails
 
 proc resetCommand*(port: string): string =
   # Loads again the program `nim flash` last wrote from here, as a reset loses it
-  loader(["--port=" & port, "--xfel=" & xfel(), "--flashed=" & buildDir() / "flashed"])
+  loader(["--port=" & port, "--xfel=" & xfel(), "--address=" & $dramStart, "--flashed=" & buildDir() / "flashed"])
