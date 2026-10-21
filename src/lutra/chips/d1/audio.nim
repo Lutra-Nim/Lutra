@@ -74,7 +74,8 @@ proc ring(size: static int): ptr Ring[size, int16] =
 
 template buffer*(codec: static Codec, size: static int) =
   ## From here on, `write` puts samples in a buffer of `size`, from which the
-  ## codec's interrupt plays them, so that the program may compute meanwhile
+  ## codec's interrupt plays them, so that the program may compute meanwhile.
+  ## It comes before any code that writes, a proc's included.
   setBufferSize(codec, size)
   proc refill() {.gensym, exportc: "lutra_interrupt_" & $codecSource, cdecl.} =
     var free = room()
