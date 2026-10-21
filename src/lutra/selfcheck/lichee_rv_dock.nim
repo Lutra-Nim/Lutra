@@ -234,6 +234,17 @@ block:
     if taken == turns.len: break
   check "every", turns == [0'u64, 1, 4, 5] and millis() - began in 50'u64..51'u64
 
+# The codec plays a second of samples in a second, fed from a buffer by its
+# interrupt. Silence, so that a speaker on the Dock stays quiet.
+speaker.buffer(4096)
+block:
+  speaker.start(volume = -119)
+  var silence: array[441, int16]
+  let start = micros()
+  for _ in 1..100: speaker.write(silence)
+  speaker.drain()
+  check "audio", uint32(micros() - start), 1_000_000
+
 # Long enough for any watchdog left running to bite, which would start the
 # chip again into its SD card's bootloader
 delay 30.sec

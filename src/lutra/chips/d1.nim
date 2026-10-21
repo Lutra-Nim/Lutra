@@ -10,7 +10,7 @@ when defined(nimscript):
   export host
 else:
   import ../arch/riscv64/[trap, fault, context]
-  import d1/[startup, gpio, uart, led, clock, random, power, interrupts, timer]
+  import d1/[startup, gpio, uart, led, clock, random, power, interrupts, timer, audio]
   export gpio except asFunction
-  export uart, led.color, led.off, random, power, timer, clock.cpuHz, clock.cycles, clock.micros,
+  export uart, led.color, led.off, random, power, timer, audio, clock.cpuHz, clock.cycles, clock.micros,
     interrupts.critical, fault.reportFaults

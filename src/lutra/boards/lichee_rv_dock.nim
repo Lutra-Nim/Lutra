@@ -14,6 +14,10 @@ const
 
   led* = PC1 ## Green, on the module
   rgbLed* = RgbLed(pin: PC0)
+  speaker* = codec
+    ## Into the Dock's NS4150 amplifier, for a speaker on J7, 2 pins of 1.25 mm,
+    ## between its outputs, neither of which is ground. The amplifier is always
+    ## on: R77, which would give its enable to PB12, is not fitted.
 
 when not defined(nimscript):
   proc start() {.exportc: "lutraBoardStart".} =

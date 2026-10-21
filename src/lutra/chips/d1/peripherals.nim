@@ -13,6 +13,8 @@ type
     ## Addressable LEDs, of the WS2812 or SK6812 kind, on the pin the LED
     ## controller drives
     pin*: Gpio
+  Codec* = object
+    ## The audio codec's DAC, mono, out of its headphone output
 
 func name*(pin: Gpio): string = "P" & pin.port & $pin.num
 
@@ -30,7 +32,9 @@ pins 'E', 18
 pins 'F', 7
 pins 'G', 19
 
-const uart0* = Uart(num: 0, base: 0x0250_0000'u32)
+const
+  uart0* = Uart(num: 0, base: 0x0250_0000'u32)
+  codec* = Codec()
 
 # A peripheral's signal can come out on a few pins only. Each is listed with
 # the number that selects it there, from Linux's `pinctrl-sun20i-d1.c`.

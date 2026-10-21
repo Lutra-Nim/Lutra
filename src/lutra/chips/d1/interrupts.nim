@@ -12,6 +12,7 @@ export trap.critical, trap.enableInterrupts, trap.disableInterrupts
 const
   uartSources* = [18, 19, 20, 21, 22, 23]
   timerSources* = [75, 76]
+  codecSource* = 41
   sources = 176
 
 # Sources nobody handles are left out of the link, as null entries

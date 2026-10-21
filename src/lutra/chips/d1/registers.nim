@@ -1,6 +1,8 @@
 ## Register addresses, from mainline Linux's device tree and drivers for the
 ## D1 (`sunxi-d1s-t113.dtsi`, `ccu-sun20i-d1.c`, `pinctrl-sunxi.h`,
-## `leds-sun50i-a100.c`). Only the ones something uses.
+## `leds-sun50i-a100.c`), and for the audio codec, which mainline does not
+## drive, Allwinner's `sun20iw1-codec.h` and the D1's manual as `hello-d1`
+## quotes it. Only the ones something uses.
 
 import ../../reg
 export reg
@@ -48,6 +50,25 @@ const
   timerInterruptStatus* = Reg 0x0205_0004 ## Writing a 1 clears each
   timerControl* = 0x0205_0010'u32 ## Timer n's at 0x10 times n further
   timerInterval* = 0x0205_0014'u32
+
+  # The audio codec's clocks: PLL_AUDIO0, whose fraction comes from its
+  # sigma-delta pattern, and the DAC's clock from it
+  pllAudio0* = Reg 0x0200_1078
+  pllAudio0Pattern* = Reg 0x0200_1178
+  dacClock* = Reg 0x0200_1A50
+  codecGates* = Reg 0x0200_1A5C ## Its bus clock in bit 0, and out of reset in bit 16
+
+  # The audio codec: its digital part, and from 0x300 its analog part
+  codec = 0x0203_0000'u32
+  dacControl* = Reg(codec + 0x00)
+  dacVolume* = Reg(codec + 0x04)
+  dacFifoControl* = Reg(codec + 0x10)
+  dacFifoStatus* = Reg(codec + 0x14) ## Its free places in bits 22:8; pending flags, cleared by a 1
+  dacData* = Reg(codec + 0x20)
+  dacAnalog* = Reg(codec + 0x310)
+  codecRamp* = Reg(codec + 0x31C)
+  headphone* = Reg(codec + 0x340)
+  codecPower* = Reg(codec + 0x348)
 
   # The RTC's spare registers, which a reset keeps
   rtcSpare2* = Reg 0x0709_0108 ## boot0 hands over to FEL when this holds `0x5AA5A55A`

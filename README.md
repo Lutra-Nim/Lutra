@@ -7,7 +7,7 @@ The plan is in [docs/design.md](docs/design.md). So far there are two boards. Th
 
 ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, two UARTs, I2C, SPI as controller, a random number source, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it. Both boards have a watchdog, say why they last started, and can restart themselves.
 
-The third, begun for a speech demo with Steady, is Sipeed's Lichee RV Dock: an Allwinner D1, a 64-bit RISC-V at 1008 MHz with 512 MB of DRAM, run with no operating system. It has startup, GPIO, its console, time, a cycle counter, interrupts, timer events, tasks, its addressable LED, panics, a report of faults, restarting and a self-check. Programs are loaded into its DRAM over USB, and a break on its console asks a running one to make way for the next.
+The third, begun for a speech demo with Steady, is Sipeed's Lichee RV Dock: an Allwinner D1, a 64-bit RISC-V at 1008 MHz with 512 MB of DRAM, run with no operating system. It has startup, GPIO, its console, time, a cycle counter, interrupts, timer events, tasks, its addressable LED, sound from the D1's audio codec through the Dock's speaker socket, panics, a report of faults, restarting and a self-check. Programs are loaded into its DRAM over USB, and a break on its console asks a running one to make way for the next.
 
 ## A first program
 

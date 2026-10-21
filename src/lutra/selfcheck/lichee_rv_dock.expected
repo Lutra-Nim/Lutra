@@ -17,5 +17,6 @@ timer ok
 interrupts ok
 tasks in handler ok
 every ok
+audio ok
 idle ok
 Fault: illegal instruction at
