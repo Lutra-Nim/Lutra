@@ -28,10 +28,14 @@ proc reset() {.exportc: "lutraReset".} =
     .word 0x0030000b
     li t0, 0x2 | 0x4 | 0x10 | 0x20 | 0x1000
     csrs 0x7c1, t0
+    li t0, 0x650c
+    csrw 0x7c5, t0
   """
   # `.word 0x0030000b` is T-Head's `dcache.ciall`, emptying the data cache
   # before it is used, and 0x7c1 is its cache control: the data cache, its
-  # writes allocating, its refills, and branch prediction, on.
+  # writes allocating, its refills, and branch prediction, on. 0x7c5 is its
+  # prefetching, off as the boot ROM leaves it: on, reading from DRAM
+  # streams twice as fast, and with bit 3, stores do too (Appendix E).
 
   setClocks()
   zeroMem(addr bss, cast[uint](addr bssEnd) - cast[uint](addr bss))
