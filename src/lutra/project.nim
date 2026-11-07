@@ -62,9 +62,6 @@ proc program*(): string =
   result = arguments().program
   if result == "": quit "Which program? For example: nim " & arguments().task & " hello.nim"
 
-proc buildDir*(): string = thisDir() / "build"
-  ## Next to the project's config.nims
-
 proc elf*(program: string): string =
   buildDir() / program.lastPathPart.changeFileExt("elf")
 
@@ -73,20 +70,6 @@ proc compile*(program: string, switches = "") =
   except OSError: quit ord(buildFailed) # The compiler has said why
 
 var portNames: seq[string] ## How the host names the port of the board's console
-
-proc hostProgram*(program: string, sources: openArray[string]): string =
-  ## A program for the host, built the first time it is needed. It is named
-  ## after its sources, so that a changed one is built again.
-  var text = ""
-  for file in sources: text.add readFile(file)
-  result = buildDir() / program.splitFile.name & "-" & toHex(hash(text).uint32) & ExeExt
-  if not fileExists(result):
-    mkDir buildDir()
-    try:
-      exec quoteShell(getCurrentCompilerExe()) & " c --skipProjCfg --hints:off -d:release --path:" &
-        quoteShell(source) & " --nimcache:" & quoteShell(buildDir() / "nimcache" / program.splitFile.name) &
-        " --out:" & quoteShell(result) & " " & quoteShell(program)
-    except OSError: fail buildFailed, "Error: " & program.lastPathPart & " did not build for the host."
 
 proc helper(): string =
   ## The host's side of the console, `lutra/host/monitor`

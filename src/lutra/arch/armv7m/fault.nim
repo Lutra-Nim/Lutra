@@ -8,7 +8,7 @@
 ## The second address is the link register's, which is where the last call
 ## made before the fault will return to.
 
-import ../../[reg, fmt]
+import ../../[reg, fmt, tasks]
 import ../../hal/bytelink
 
 const
@@ -37,7 +37,7 @@ proc report*(sink: static ByteSink, frame: ptr array[8, uint32]) =
   say cstring("\n       last call from 0x")
   say hex(frame[5] and not 1'u32)
   say '\n'
-  while true: discard
+  halt()
 
 template reportFaults*(sink: static ByteSink) =
   ## From here on, a fault is reported to `sink`

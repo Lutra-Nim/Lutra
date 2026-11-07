@@ -7,6 +7,8 @@ The plan is in [docs/design.md](docs/design.md). So far there are two boards. Th
 
 ST's B-L475E-IOT01A, a Cortex-M4, is the second: startup, GPIO and pin interrupts, two UARTs, I2C, SPI as controller, a random number source, time, timer events, a cycle counter, tasks, records and a report of faults. The same self-check, sensor driver and benchmark run on it. Both boards have a watchdog, say why they last started, and can restart themselves.
 
+The third, begun for a speech demo with Steady, is Sipeed's Lichee RV Dock: an Allwinner D1, a 64-bit RISC-V at 1008 MHz with 512 MB of DRAM, run with no operating system. It has startup, GPIO, its console, time, a cycle counter, interrupts, timer events, tasks, its addressable LED, sound from the D1's audio codec through the Dock's speaker socket, panics, a report of faults, restarting and a self-check. Programs are loaded into its DRAM over USB, and a break on its console asks a running one to make way for the next.
+
 ## A first program
 
 ```
@@ -139,6 +141,7 @@ Needs Nim 2.2.6 or later, and has also been run on 2.2.12, and for each board it
 |---|---|---|
 | `esp32c3_devkitm1` | Espressif's `riscv32-esp-elf` toolchain, on the `PATH` or where Espressif's installer puts it under `~/.espressif` | `esptool` 5, on the `PATH` or named in `ESPTOOL` |
 | `b_l475e_iot01a` | `arm-none-eabi-gcc` with its `newlib`, on the `PATH` | `pyocd`, on the `PATH` or named in `PYOCD` |
+| `lichee_rv_dock` | xPack's `riscv-none-elf-gcc` 14 or later, on the `PATH` or unpacked under `~/.local/xPacks` | `xfel`, on the `PATH` or named in `XFEL`. The board's console wants a 3.3 V USB serial adapter on the pins marked TX and RX underneath, and its programs go over the module's USB-C port |
 
 [examples/](examples) has a folder for each board, and its programs are run from there. On the DevKitM-1, `nim flash rgb.nim`, `nim flash button.nim`, `nim flash debounced.nim`, `nim flash tasks.nim` and `nim flash record.nim` need nothing wired; on the B-L475E-IOT01A, nor do `nim flash blink.nim`, `nim flash button.nim`, `nim flash debounced.nim`, `nim flash tasks.nim` and `nim flash record.nim`.
 
@@ -155,7 +158,7 @@ Run from `checks/` in a clone of this repository, but for `nim selfcheck`, which
 | Command | Does |
 |---|---|
 | `nim selfcheck` | The board's own hardware: clock, time, pins, interrupts, flash, I2C, the LED's signal, tasks, timers, the fault report |
-| `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository |
+| `nim steady` | Steady's benchmark for one model, from a checkout of Steady beside this repository. `-d:backend=<folder>` builds it with a Steady backend from that folder |
 | `nim sensors` | Reads an LSM6DS33 and a LIS3MDL on IO18 and IO19 through their driver packages, checked out beside this repository. On the B-L475E-IOT01A, the LIS3MDL the board carries |
 | `nim echo` | Sends the board 64 KB at 921600 baud and checks that it all comes back |
 | `nim resets` | The watchdog resets the board when it is not fed, the board restarts itself, and each time it says why it started |

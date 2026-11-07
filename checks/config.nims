@@ -5,6 +5,7 @@ board "esp32c3_devkitm1"
 const
   steady {.strdefine.} = thisDir() / "../../Steady" ## A checkout of Steady
   model {.strdefine.} = "kws"
+  backend {.strdefine.} = "" ## A folder holding a `steady_backend` module, if one is wanted
 
 proc generate(model, work: string) =
   ## Steady's code for one of its test models
@@ -13,14 +14,15 @@ proc generate(model, work: string) =
   exec buildDir() / "steadyc " & steady / "tests/models" / model & ".tflite -o " & work &
     " -n " & model & " --no-capi -q"
 
-task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady":
+task steady, "Run Steady's benchmark for a model, e.g. nim -d:model=kws steady, -d:backend=<folder> for a backend":
   let
     work = buildDir() / "steady" / model
     nonce = $(hash(CompileDate & CompileTime).uint32) # When this task started
   generate(model, work)
   writeFile(work / "bench.nim", readFile(steady / "tests/mcu/bench.nim.in").replace("@MODEL@", model))
   build(thisDir() / "steady.nim", "-d:steadyProfile -d:steadyNonce=" & nonce &
-    " --path:" & steady / "src" & " --path:" & work)
+    " --path:" & steady / "src" & " --path:" & work &
+    (if backend != "": " -d:steadyBackend --path:" & quoteShell(backend) else: ""))
   flash("steady", serialPort())
   let record = capture(serialPort(), resetCommand(serialPort()), "BEGIN", "END")
   if "nonce " & nonce notin record: fail checkFailed, "That is not the image that was just built."

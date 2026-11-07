@@ -4,8 +4,15 @@
 import lutra
 import bench
 
+const lutraBoard {.strdefine.} = ""
+
 # What a chip has in front of its flash, what counts its cycles, and the LED
-when declared(rgbLed):
+when lutraBoard == "lichee_rv_dock":
+  const (timebase, cache) = ("mcycle", "icache=32K dcache=32K") # Both on, as Lutra leaves them; the model is in DRAM
+  proc cacheState(): uint32 =
+    {.emit: ["__asm__ volatile(\"csrr %0, 0x7c1\" : \"=r\"(", result, "));"].} # T-Head's cache control
+  proc led(on: bool) = (if on: rgbLed.color(green = 20) else: rgbLed.off())
+elif lutraBoard == "esp32c3_devkitm1":
   import lutra/chips/esp32c3/registers
   const (timebase, cache) = ("pccr", "icache=16K") # One cache, which can't be turned off
   proc cacheState(): uint32 = cacheControl[]

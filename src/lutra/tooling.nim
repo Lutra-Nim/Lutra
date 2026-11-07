@@ -1,7 +1,9 @@
 ## What the host side shares between `lutra/project` and each chip's
-## `host.nim`: how a task ends, and the tools it needs.
+## `host.nim`: how a task ends, the tools it needs, and building the programs
+## for the host that do what NimScript can't.
 
 import std/os
+when defined(nimscript): import std/[strutils, hashes]
 
 type
   Exit* = enum
@@ -31,3 +33,23 @@ proc found*(name: string, install: string, env = ""): Tool =
 proc need*(tool: Tool) =
   if tool.path == "":
     fail(notSetUp, "Error: " & tool.name & " not found. " & tool.install)
+
+when defined(nimscript):
+  const source = currentSourcePath().parentDir.parentDir ## Holds lutra.nim
+
+  proc buildDir*(): string = thisDir() / "build"
+    ## Next to the project's config.nims
+
+  proc hostProgram*(program: string, sources: openArray[string]): string =
+    ## A program for the host, built the first time it is needed. It is named
+    ## after its sources, so that a changed one is built again.
+    var text = ""
+    for file in sources: text.add readFile(file)
+    result = buildDir() / program.splitFile.name & "-" & toHex(hash(text).uint32) & ExeExt
+    if not fileExists(result):
+      mkDir buildDir()
+      try:
+        exec quoteShell(getCurrentCompilerExe()) & " c --skipProjCfg --hints:off -d:release --path:" &
+          quoteShell(source) & " --nimcache:" & quoteShell(buildDir() / "nimcache" / program.splitFile.name) &
+          " --out:" & quoteShell(result) & " " & quoteShell(program)
+      except OSError: fail buildFailed, "Error: " & program.lastPathPart & " did not build for the host."
